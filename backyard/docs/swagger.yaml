@@ -1,0 +1,98 @@
+basePath: /
+definitions:
+  models.ErrorResponse:
+    properties:
+      error:
+        example: Validation Error
+        type: string
+      message:
+        example: Field is required
+        type: string
+    type: object
+  models.KafkaMessage:
+    properties:
+      broker:
+        example: localhost:9093
+        type: string
+      key:
+        example: message-key
+        type: string
+      topic:
+        example: test-topic
+        type: string
+      value:
+        example: '{''data'': ''test message''}'
+        type: string
+    required:
+    - broker
+    - topic
+    - value
+    type: object
+  models.Response:
+    properties:
+      data: {}
+      message:
+        example: Operation completed successfully
+        type: string
+      success:
+        example: true
+        type: boolean
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: A simple Kafka producer API for testing and development
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Cupcake Kafka API
+  version: "1.0"
+paths:
+  /api/kafka/publish:
+    post:
+      consumes:
+      - application/json
+      description: Publish a JSON message to specified Kafka topic
+      parameters:
+      - description: Message to publish
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/models.KafkaMessage'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Publish message to Kafka topic
+      tags:
+      - kafka
+  /health:
+    get:
+      description: Get the health status of the service
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+      summary: Health check
+      tags:
+      - health
+swagger: "2.0"

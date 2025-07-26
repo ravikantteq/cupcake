@@ -1,0 +1,6 @@
+{
+  "broker": "localhost:9093",
+  "topic": "test-topic",
+  "key": "test-key",
+  "value": "{\"message\": \"Hello from curl!\", \"timestamp\": \"2025-07-26\", \"data\": {\"user\": \"test-user\", \"action\": \"login\"}}"
+}
