@@ -1,339 +1,125 @@
-# Product Requirements Document (PRD)
-# Cupcake | Backyard - Kafka Producer Testing Tool
-
-## Project Overview
-
-**Project Name**: Cupcake | Backyard  
-**Date**: July 25, 2025  
-**Version**: 1.0  
-**Status**: Implemented  
-
-### Problem Statement
-The user needed a comprehensive Kafka producer testing tool with a clean, maintainable architecture that could:
-- Provide a web UI for easy Kafka message publishing
-- Offer REST API endpoints for programmatic access
-- Include comprehensive testing capabilities
-- Support future extensibility without overengineering
-
-### Solution Overview
-A dual-component system consisting of:
-1. **Frontend**: Angular-based web UI (`cupcake_ui/`)
-2. **Backend**: Go-based REST API server (`backyard/`)
-
-## Architecture & Technology Stack
-
-### Backend (Go)
-- **Framework**: Gin web framework
-- **Kafka Client**: Confluent Kafka Go client
-- **Documentation**: Swagger/OpenAPI with auto-generation
-- **Architecture Pattern**: Clean Architecture with layered separation
-
-### Frontend (Angular)
-- **Framework**: Angular 19
-- **HTTP Client**: Angular HttpClient
-- **Styling**: CSS with responsive design
-- **Components**: Standalone components architecture
-
-### Development Tools
-- **Build Automation**: Makefile
-- **Containerization**: Docker + Docker Compose
-- **Documentation**: Comprehensive README + inline docs
-- **Testing**: Unit and integration tests
-
-## Feature Requirements
-
-### Core Features (Implemented ✅)
-
-1. **Kafka Producer API**
-   - REST endpoint: `POST /api/kafka/publish`
-   - JSON payload support
-   - Configurable broker and topic
-   - Optional message key
-   - Error handling and validation
-
-2. **Web User Interface**
-   - Form-based message publishing
-   - Real-time validation
-   - Success/error feedback
-   - Backend health monitoring
-
-3. **API Documentation**
-   - Swagger UI at `/swagger/index.html`
-   - Interactive API testing
-   - Auto-generated from code annotations
-
-4. **Health Monitoring**
-   - Health check endpoint: `GET /health`
-   - Frontend health status display
-   - Service monitoring capabilities
-
-5. **CORS Support**
-   - Cross-origin requests enabled
-   - Development-friendly configuration
-   - Frontend-backend communication
-
-6. **Testing Framework**
-   - Unit tests for core logic
-   - Integration tests for API endpoints
-   - Validation testing
-   - Skippable integration tests (Kafka-dependent)
-
-### Technical Architecture
-
-```
-cupcake/
-├── backyard/                 # Go Backend
-│   ├── cmd/
-│   │   └── main.go          # API server entry point
-│   ├── internal/
-│   │   ├── api/             # HTTP handlers & routing
-│   │   │   └── handlers.go  # Kafka API handlers
-│   │   └── models/          # Data models & validation
-│   │       └── models.go    # Request/response models
-│   ├── pkg/
-│   │   └── netw/            # Kafka producer package
-│   │       ├── kafka_producer.go      # Core producer logic
-│   │       └── kafka_producer_test.go # Unit tests
-│   ├── docs/                # Auto-generated Swagger docs
-│   ├── Dockerfile           # Backend containerization
-│   └── go.mod              # Go dependencies
-├── cupcake_ui/              # Angular Frontend
-│   ├── src/
-│   │   └── app/
-│   │       ├── components/  # UI components
-│   │       │   └── kafka-producer.component.ts
-│   │       ├── services/    # HTTP services
-│   │       │   └── kafka.service.ts
-│   │       ├── app.component.ts     # Main app component
-│   │       └── app.config.ts        # App configuration
-│   ├── Dockerfile           # Frontend containerization
-│   ├── nginx.conf          # Production web server config
-│   └── package.json        # Node.js dependencies
-├── docker-compose.yml       # Full stack orchestration
-├── Makefile                # Build automation
-├── README.md               # Project documentation
-└── setup-complete.sh       # Setup summary script
-```
-
-## Implementation Details
-
-### API Endpoints
-
-#### 1. Publish Message
-- **Endpoint**: `POST /api/kafka/publish`
-- **Purpose**: Publish JSON messages to Kafka topics
-- **Request Body**:
-  ```json
-  {
-    "broker": "localhost:9092",
-    "topic": "test-topic", 
-    "key": "optional-key",
-    "value": "{\"data\": \"your message\"}"
-  }
-  ```
-- **Response**: Success/error with detailed messaging
-
-#### 2. Health Check
-- **Endpoint**: `GET /health`
-- **Purpose**: Monitor backend service status
-- **Response**: Service health status and metadata
-
-### Frontend Components
-
-#### 1. Kafka Producer Component
-- Form-based message publishing interface
-- Real-time validation and error handling
-- Success/failure feedback display
-- Backend connectivity testing
-
-#### 2. Main App Component
-- Application shell and navigation
-- Service status monitoring
-- Links to documentation and APIs
-
-### Testing Strategy
-
-#### Backend Tests
-- **Unit Tests**: Core Kafka producer logic
-- **Integration Tests**: API endpoint functionality (Kafka-dependent)
-- **Validation Tests**: Input validation and error scenarios
-- **Coverage**: Core business logic and API contracts
-
-#### Frontend Tests
-- **Component Tests**: UI component behavior
-- **Service Tests**: HTTP service communication
-- **Integration Tests**: End-to-end user workflows
-
-### Development Workflow
-
-#### Local Development
-1. **Backend**: `make backend` (runs on :8080)
-2. **Frontend**: `make frontend` (runs on :4200)
-3. **Combined**: `make dev` (starts both services)
-
-#### Testing
-1. **Backend Only**: `make test-backend`
-2. **Frontend Only**: `make test-frontend`
-3. **Full Suite**: `make test`
-
-#### Production Build
-1. **Backend**: `make build-backend`
-2. **Frontend**: `make build-frontend`
-3. **Combined**: `make build`
-
-### Docker Support
-
-#### Individual Services
-- Backend: Dockerfile with multi-stage build
-- Frontend: Nginx-based production container
-
-#### Full Stack
-- docker-compose.yml with Kafka, Zookeeper, Backend, Frontend
-- Kafka UI for monitoring (optional)
-- Network configuration for service communication
-
-## User Experience
-
-### Primary User Flow
-1. User opens web interface at `http://localhost:4200`
-2. Fills in Kafka broker, topic, key (optional), and message value
-3. Clicks "Publish Message" to send to Kafka
-4. Receives immediate feedback on success/failure
-5. Can check backend health and view API documentation
-
-### Alternative Flows
-- Direct API usage via curl/Postman
-- Swagger UI for interactive API testing
-- Health monitoring for service status
-
-## Quality Assurance
-
-### Code Quality
-- **Clean Architecture**: Separation of concerns with clear layers
-- **Error Handling**: Comprehensive error messages and validation
-- **Documentation**: Inline comments and comprehensive README
-- **Testing**: Unit and integration test coverage
-
-### Performance Considerations
-- **Async Operations**: Non-blocking Kafka operations
-- **Resource Management**: Proper connection cleanup
-- **Error Recovery**: Graceful failure handling
-
-### Security Considerations
-- **Input Validation**: Server-side validation for all inputs
-- **CORS Configuration**: Controlled cross-origin access
-- **Error Messages**: Secure error information disclosure
-
-## Future Enhancements
-
-### Phase 2 Features
-1. **Kafka Consumer**
-   - Message consumption capabilities
-   - Topic subscription management
-   - Real-time message display
-
-2. **Message History**
-   - Published message logging
-   - Search and filter capabilities
-   - Export functionality
-
-3. **Batch Operations**
-   - Multiple message publishing
-   - Bulk import from files
-   - Template-based messaging
-
-### Phase 3 Features
-1. **Authentication & Authorization**
-   - User management system
-   - Role-based access control
-   - API key management
-
-2. **Advanced Monitoring**
-   - Message delivery tracking
-   - Performance metrics
-   - Alert system
-
-3. **Topic Management**
-   - Create/delete topics
-   - Topic configuration
-   - Partition management
-
-## Technical Decisions & Rationale
-
-### Technology Choices
-
-1. **Go for Backend**
-   - **Rationale**: High performance, excellent Kafka client library, strong typing
-   - **Benefits**: Fast compilation, good concurrency, simple deployment
-
-2. **Angular for Frontend**
-   - **Rationale**: User requested Angular, mature framework
-   - **Benefits**: TypeScript support, robust ecosystem, good testing tools
-
-3. **Gin Web Framework**
-   - **Rationale**: Lightweight, fast, good middleware support
-   - **Benefits**: Easy routing, built-in JSON handling, minimal overhead
-
-4. **Swagger Documentation**
-   - **Rationale**: Auto-generated docs, interactive testing
-   - **Benefits**: Always up-to-date docs, reduces documentation overhead
-
-### Architecture Decisions
-
-1. **Clean Architecture Pattern**
-   - **Rationale**: Maintainable, testable, extensible
-   - **Implementation**: Separate layers for API, business logic, and infrastructure
-
-2. **Standalone Components (Angular)**
-   - **Rationale**: Modern Angular pattern, better tree-shaking
-   - **Benefits**: Improved performance, cleaner dependencies
-
-3. **Error-First Design**
-   - **Rationale**: Robust error handling throughout the stack
-   - **Implementation**: Comprehensive error types and user-friendly messages
-
-## Success Metrics
-
-### Implementation Success (Achieved ✅)
-- ✅ Functional Kafka producer API
-- ✅ Working Angular frontend
-- ✅ Comprehensive test suite
-- ✅ Complete documentation
-- ✅ Development automation (Makefile)
-- ✅ Container support (Docker)
-
-### Quality Metrics (Achieved ✅)
-- ✅ Clean, maintainable code architecture
-- ✅ Comprehensive error handling
-- ✅ User-friendly interface
-- ✅ Developer-friendly setup process
-- ✅ Extensible design for future features
-
-## Deployment & Operations
-
-### Development Environment
-- Local development with hot-reload
-- Automatic dependency management
-- Integrated testing workflow
-
-### Production Considerations
-- Docker containerization ready
-- Environment-specific configuration
-- Health monitoring endpoints
-- Logging and observability hooks
-
-## Project Status: COMPLETE ✅
-
-**Implementation Date**: July 25, 2025  
-**Status**: All core requirements implemented and tested  
-**Next Steps**: Ready for user testing and iterative improvements  
-
-### Deliverables Completed
-1. ✅ Functional backend API with Swagger documentation
-2. ✅ Complete Angular frontend with form validation
-3. ✅ Comprehensive testing framework
-4. ✅ Docker containerization support
-5. ✅ Build automation and documentation
-6. ✅ Health monitoring and error handling
-
-The project successfully meets all stated requirements and provides a solid foundation for future enhancements while maintaining clean, maintainable code that can be easily edited and extended.
+⚠️ NOTICE: This PRD has been superseded by a more comprehensive version.
+
+Please refer to the updated document:
+📄 Cupcake_Kafka_Test_Framework_PRD_v2.md
+
+The new PRD (v2.0) includes:
+- Enhanced technical specifications
+- Detailed implementation roadmap
+- Advanced message matching capabilities
+- Comprehensive Docker setup
+- MongoDB integration
+- Security considerations
+- Performance requirements
+- User workflow documentation
+
+For the most current requirements and specifications, please use the v2.0 document.
+
+---
+
+Legacy PRD v1.0 (Archived)
+===========================
+
+Cupcake Kafka Test Framework - Product Requirements Document (PRD)
+
+Project: Cupcake Kafka Test Framework
+Version: 1.0
+Date: July 2025
+Owner: Ravikant P
+
+Overview:
+Cupcake is a comprehensive Kafka testing framework designed to simplify the process of testing Kafka message flows in enterprise applications. The platform provides a user-friendly interface for creating, managing, and executing Kafka message tests.
+
+Goals:
+1. Provide a simple yet powerful tool for testing Kafka message flows
+2. Enable both technical and non-technical users to create and execute tests
+3. Support end-to-end testing of Kafka-based microservices
+4. Offer real-time monitoring and validation of message flows
+
+Core Features:
+
+1. Message Producer Interface
+   - Web-based UI for publishing messages to Kafka topics
+   - Support for various message formats (JSON, Avro, etc.)
+   - Message templating and dynamic value generation
+   - Batch message publishing capabilities
+
+2. Consumer Management
+   - Automatic consumer setup for subscribed topics
+   - Real-time message consumption and display
+   - Consumer group management
+   - Offset tracking and management
+
+3. Test Flow Designer
+   - Visual interface for creating test flows
+   - Step-by-step test execution with validation points
+   - Support for complex message validation rules
+   - Test flow versioning and management
+
+4. Validation Framework
+   - Flexible message validation using patterns
+   - Support for dynamic values (timestamps, UUIDs, etc.)
+   - Custom validation rules and assertions
+   - Detailed validation reports
+
+5. Test Suite Management
+   - Organization of test flows into suites
+   - Batch execution of multiple test flows
+   - Test scheduling and automation
+   - Historical test execution tracking
+
+Technical Architecture:
+
+Backend:
+- Go-based API server with Gin framework
+- Kafka client library for producer/consumer operations
+- MongoDB for test data and configuration storage
+- RESTful API design with comprehensive documentation
+
+Frontend:
+- Angular-based single-page application
+- Responsive design for desktop and mobile
+- Real-time updates using WebSocket connections
+- Component-based architecture
+
+Infrastructure:
+- Docker containerization for easy deployment
+- Docker Compose for local development
+- Support for cloud deployment (Kubernetes)
+- Monitoring and logging integration
+
+Key Use Cases:
+
+1. Message Flow Testing
+   - Publish a message to Topic A
+   - Verify corresponding message appears in Topic B
+   - Validate message transformation and enrichment
+
+2. System Integration Testing
+   - Test end-to-end message flows across services
+   - Validate business logic implementations
+   - Verify error handling and dead letter queues
+
+3. Performance Testing
+   - Measure message processing latency
+   - Test system behavior under load
+   - Validate consumer lag and throughput
+
+4. Regression Testing
+   - Automated execution of test suites
+   - Continuous validation of system behavior
+   - Early detection of breaking changes
+
+Success Metrics:
+- Reduce Kafka testing setup time by 80%
+- Enable non-technical stakeholders to create tests
+- Support testing of 100+ concurrent message flows
+- Achieve 99.9% system uptime
+
+Future Enhancements:
+- Integration with CI/CD pipelines
+- Advanced analytics and reporting
+- Support for multiple Kafka clusters
+- Machine learning-based test optimization
+
+This PRD serves as the foundation for developing a comprehensive Kafka testing platform that addresses the needs of modern enterprise applications.

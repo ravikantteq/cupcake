@@ -2,29 +2,60 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/gin-gonic/gin"
+	_ "github.com/ravikantteq/cupcake/backyard/docs" // This line is required for swagger
+	"github.com/ravikantteq/cupcake/backyard/internal/api"
+	"github.com/ravikantteq/cupcake/backyard/internal/repository"
+	"github.com/ravikantteq/cupcake/backyard/internal/services"
+	"github.com/ravikantteq/cupcake/backyard/pkg/storage"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	_ "github.com/systemgenes/cupcake/backyard/docs" // This line is required for swagger
-	"github.com/systemgenes/cupcake/backyard/internal/api"
 )
 
-// @title Cupcake Kafka API
-// @version 1.0
-// @description A simple Kafka producer API for testing and development
+// @title Cupcake Kafka Test Framework API
+// @version 2.0
+// @description Enterprise-ready Kafka testing platform with advanced flow design and intelligent message matching
 // @termsOfService http://swagger.io/terms/
 
 // @contact.name API Support
-// @contact.url http://www.swagger.io/support
-// @contact.email support@swagger.io
+// @contact.url https://github.com/ravikantteq/cupcake
+// @contact.email support@cupcake.com
 
-// @license.name Apache 2.0
-// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
 
 // @host localhost:8080
 // @BasePath /
 func main() {
+	// Get environment variables
+	mongoURI := getEnv("MONGO_URI", "mongodb://cupcake:cupcake123@localhost:27017/cupcake?authSource=admin")
+	kafkaBroker := getEnv("KAFKA_BROKER", "localhost:9093")
+	port := getEnv("PORT", "8080")
+	ginMode := getEnv("GIN_MODE", "debug")
+
+	// Set Gin mode
+	gin.SetMode(ginMode)
+
+	// Initialize MongoDB
+	db, err := storage.NewMongoDB(mongoURI, "cupcake")
+	if err != nil {
+		log.Fatal("Failed to connect to MongoDB:", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Printf("Error closing MongoDB connection: %v", err)
+		}
+	}()
+
+	// Initialize repositories and services
+	repo := repository.NewRepository(db)
+	flowService := services.NewFlowService(repo, kafkaBroker)
+
+	// Initialize handlers
+	handlers := api.NewHandlers(flowService, db)
+
 	// Set up Gin router
 	r := gin.Default()
 
@@ -42,28 +73,53 @@ func main() {
 		c.Next()
 	})
 
-	// Initialize handlers
-	kafkaHandler := api.NewKafkaHandler("localhost:9093")
-
 	// Health check endpoint
-	r.GET("/health", kafkaHandler.HealthCheck)
+	r.GET("/health", handlers.HealthCheck)
 
-	// API routes
+	// Legacy API routes (for backward compatibility)
 	apiGroup := r.Group("/api")
 	{
 		kafkaGroup := apiGroup.Group("/kafka")
 		{
-			kafkaGroup.POST("/publish", kafkaHandler.PublishMessage)
+			kafkaGroup.POST("/publish", handlers.PublishMessage)
 		}
+	}
+
+	// New API v1 routes
+	v1Group := r.Group("/api/v1")
+	{
+		// Flow management
+		flowsGroup := v1Group.Group("/flows")
+		{
+			flowsGroup.POST("", handlers.CreateFlow)
+			flowsGroup.GET("", handlers.GetFlows)
+			flowsGroup.GET("/:id", handlers.GetFlowByID)
+			flowsGroup.PUT("/:id", handlers.UpdateFlow)
+			flowsGroup.POST("/:id/execute", handlers.ExecuteFlow)
+		}
+
+		// TODO: Add more endpoints for suites, consumers, executions, etc.
 	}
 
 	// Swagger documentation
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	log.Println("Starting Cupcake Kafka API server on :8080")
-	log.Println("Swagger UI available at: http://localhost:8080/swagger/index.html")
+	log.Println("🧁 Starting Cupcake Kafka Test Framework API server")
+	log.Printf("📊 MongoDB connected: %s", mongoURI)
+	log.Printf("📨 Kafka broker: %s", kafkaBroker)
+	log.Printf("🌐 Server listening on port: %s", port)
+	log.Printf("📖 Swagger UI: http://localhost:%s/swagger/index.html", port)
+	log.Printf("🔧 Health Check: http://localhost:%s/health", port)
 
-	if err := r.Run(":8080"); err != nil {
+	if err := r.Run(":" + port); err != nil {
 		log.Fatal("Failed to start server:", err)
 	}
+}
+
+// getEnv gets an environment variable with a fallback default value
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }

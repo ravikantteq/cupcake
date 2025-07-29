@@ -1,210 +1,405 @@
-# 🧁 Cupcake | Backyard
+# 🧁 Cupcake Kafka Test Framework
 
-A simple, well-designed Kafka producer testing tool with a clean Angular frontend and robust Go backend.
+A comprehensive, enterprise-ready Kafka testing platform with advanced flow design, intelligent message matching, and real-time monitoring capabilities.
 
 ## 🎯 Features
 
-- **Kafka Producer API**: Publish messages to any Kafka topic via REST API
-- **Interactive Web UI**: Angular-based frontend for easy message publishing
-- **Swagger Documentation**: Auto-generated API documentation
-- **Comprehensive Testing**: Unit and integration tests for reliability
-- **CORS Support**: Frontend and backend can run on different ports
-- **Health Checks**: Monitor backend service health
-- **Clean Architecture**: Modular, maintainable code structure
+- **🔄 Test Flow Designer**: Visual interface for creating complex Kafka message flows
+- **🎭 Intelligent Message Matching**: Advanced assertion framework with dynamic value matching
+- **📊 Real-time Monitoring**: Live dashboard for test execution and system health
+- **🗃️ Persistent Storage**: MongoDB integration for test configurations and execution history
+- **🐳 Fully Dockerized**: Complete containerized environment with one-command setup
+- **🎪 Test Suite Management**: Organize and execute multiple test flows as suites
+- **🕵️ Consumer Management**: Auto-setup consumers with flexible topic subscription
+- **📈 Advanced Reporting**: Comprehensive execution reports and analytics
+- **🔐 Enterprise Ready**: Built for scale with security and performance in mind
 
-## 🏗️ Project Structure
+## 🏗️ Architecture
 
 ```
 cupcake/
-├── backyard/                 # Go backend
-│   ├── cmd/
-│   │   └── main.go          # API server entry point
-│   ├── internal/
-│   │   ├── api/             # HTTP handlers
-│   │   └── models/          # Data models
-│   ├── pkg/
-│   │   └── netw/            # Kafka producer
-│   ├── docs/                # Swagger generated docs
-│   └── go.mod
-├── cupcake_ui/              # Angular frontend
-│   ├── src/
-│   │   └── app/
-│   │       ├── components/  # UI components
-│   │       └── services/    # HTTP services
-│   └── package.json
-└── Makefile                 # Build automation
+├── 📄 Cupcake_Kafka_Test_Framework_PRD_v2.md  # Comprehensive PRD
+├── 🐳 docker-compose.yml                      # Complete infrastructure setup
+├── 📁 backyard/                               # Go backend service
+│   ├── cmd/                                   # Entry points
+│   ├── internal/                              # Core business logic
+│   │   ├── api/                              # HTTP handlers & routes
+│   │   ├── models/                           # Data models
+│   │   ├── services/                         # Business services
+│   │   └── consumers/                        # Kafka consumer management
+│   ├── pkg/                                  # Shared packages
+│   │   ├── netw/                            # Kafka client
+│   │   ├── validation/                       # Message validation
+│   │   └── storage/                          # MongoDB operations
+│   └── docs/                                 # API documentation
+├── 📁 cupcake_ui/                            # Angular frontend
+│   ├── src/app/                              
+│   │   ├── components/                       # UI components
+│   │   ├── services/                         # API services
+│   │   ├── models/                           # TypeScript models
+│   │   └── pages/                            # Application pages
+│   └── public/                               # Static assets
+└── 📁 scripts/                               # Database & deployment scripts
 ```
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-- Go 1.20+
-- Node.js 18+
-- Angular CLI 19+
-- Kafka (for actual message publishing)
+- **Docker** 24.0+ and **Docker Compose** 2.0+
+- **Git** for version control
+- 8GB+ RAM recommended for full stack
 
-### Installation
+### Installation & Startup
 
-1. **Install dependencies:**
+1. **Clone and navigate:**
    ```bash
-   make install-deps
+   git clone <repository-url>
+   cd cupcake
    ```
 
-2. **Start the backend:**
+2. **Start the complete stack:**
    ```bash
-   make backend
+   docker-compose up -d
    ```
-   Backend runs on `http://localhost:8080`
+   
+   This will start:
+   - 🧩 **Kafka & Zookeeper** (message infrastructure)
+   - 🗄️ **MongoDB** (data persistence)
+   - 🔧 **Backend Service** (Go API server)
+   - 🎨 **Frontend** (Angular UI)
+   - 📊 **Kafka UI** (broker monitoring)
+   - 🗃️ **Mongo Express** (database management)
 
-3. **Start the frontend (in a new terminal):**
-   ```bash
-   make frontend
-   ```
-   Frontend runs on `http://localhost:4200`
+3. **Access the application:**
+   - **Main UI**: http://localhost:4200
+   - **API Docs**: http://localhost:8080/swagger/index.html
+   - **Kafka UI**: http://localhost:8081
+   - **Database UI**: http://localhost:8082 (admin/admin123)
 
-### Using the Application
+## 🎪 Key Capabilities
 
-1. **Access the UI**: Open `http://localhost:4200`
-2. **Fill in the form:**
-   - **Broker**: Your Kafka broker address (e.g., `localhost:9093`)
-   - **Topic**: Kafka topic name
-   - **Key**: Message key (optional)
-   - **Value**: JSON message content
+### 1. Test Flow Creation
+Create sophisticated test flows with multiple steps:
 
-3. **Publish**: Click "Publish Message" to send to Kafka
+```json
+{
+  "name": "Order Processing Flow",
+  "steps": [
+    {
+      "type": "produce",
+      "config": {
+        "topic": "orders-input",
+        "message": {
+          "orderId": "uuid()",
+          "amount": "number(min=10, max=1000)",
+          "timestamp": "timestamp()"
+        }
+      }
+    },
+    {
+      "type": "consume",
+      "config": {
+        "topic": "orders-processed",
+        "timeout": 10000
+      }
+    },
+    {
+      "type": "validate",
+      "config": {
+        "expectedMessage": {
+          "orderId": "match(step-1.orderId)",
+          "status": "enum(processed,completed)",
+          "processedAt": "timestamp()"
+        }
+      }
+    }
+  ]
+}
+```
 
-## 📚 API Documentation
+### 2. Dynamic Message Matching
+Support for intelligent assertions:
+- `uuid()` - Match any valid UUID
+- `timestamp()` - Match any valid timestamp
+- `number(min=X, max=Y)` - Match numbers within range
+- `enum(val1,val2,val3)` - Match specific values
+- `regex(pattern)` - Match regex patterns
+- `any()` - Match any value
+- `match(step-X.field)` - Reference previous step values
 
-Access the Swagger UI at: `http://localhost:8080/swagger/index.html`
+### 3. Consumer Management
+- **Auto-Consumer Setup**: Automatically create consumers for test topics
+- **Group Management**: Organize consumers into logical groups
+- **Offset Control**: Manual and automatic offset management
+- **Health Monitoring**: Real-time consumer health tracking
 
-### Endpoints
+### 4. Test Suite Execution
+- **Batch Execution**: Run multiple flows as a coordinated suite
+- **Environment Configs**: Different settings for dev/staging/prod
+- **Parallel Processing**: Execute independent flows simultaneously
+- **Detailed Reporting**: Comprehensive execution reports
+
+## 📚 API Reference
+
+### Core Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/health` | Health check |
-| POST | `/api/kafka/publish` | Publish message to Kafka |
+| `GET` | `/health` | System health check |
+| `POST` | `/api/v1/flows` | Create test flow |
+| `GET` | `/api/v1/flows` | List all flows |
+| `POST` | `/api/v1/suites` | Create test suite |
+| `POST` | `/api/v1/suites/{id}/execute` | Execute suite |
+| `POST` | `/api/v1/consumers` | Create consumer |
+| `GET` | `/api/v1/consumers` | List active consumers |
 
-### Example API Usage
+### Example: Create and Execute Flow
 
 ```bash
-curl -X POST http://localhost:8080/api/kafka/publish \
+# Create a test flow
+curl -X POST http://localhost:8080/api/v1/flows \
   -H "Content-Type: application/json" \
   -d '{
-    "broker": "localhost:9093",
-    "topic": "test-topic",
-    "key": "test-key",
-    "value": "{\"data\": \"hello world\"}"
+    "name": "Payment Processing Test",
+    "description": "Test payment flow end-to-end",
+    "steps": [
+      {
+        "stepId": "produce-payment",
+        "type": "produce",
+        "config": {
+          "topic": "payments-input",
+          "message": {
+            "paymentId": "uuid()",
+            "amount": 100.50,
+            "currency": "USD"
+          }
+        }
+      },
+      {
+        "stepId": "consume-result",
+        "type": "consume",
+        "config": {
+          "topic": "payments-processed",
+          "timeout": 5000
+        }
+      }
+    ]
+  }'
+
+# Execute the flow as part of a suite
+curl -X POST http://localhost:8080/api/v1/suites/execute \
+  -H "Content-Type: application/json" \
+  -d '{
+    "suiteId": "suite-id-here",
+    "environment": "development"
   }'
 ```
 
-## 🧪 Testing
+## 🧪 Testing Framework Features
 
-### Run All Tests
-```bash
-make test
+### Message Validation Patterns
+```javascript
+// Dynamic timestamp validation
+"timestamp": "timestamp()"
+
+// Range-based number validation  
+"amount": "number(min=0, max=10000)"
+
+// Enum validation
+"status": "enum(pending,completed,failed)"
+
+// UUID validation
+"id": "uuid()"
+
+// Reference previous step values
+"correlationId": "match(step-1.paymentId)"
+
+// Custom regex patterns
+"code": "regex(^[A-Z]{3}\\d{3}$)"
 ```
 
-### Backend Tests Only
-```bash
-make test-backend
+### Consumer Configuration
+```json
+{
+  "groupId": "test-consumer-group",
+  "topics": ["orders", "payments", "notifications"],
+  "config": {
+    "autoOffsetReset": "earliest",
+    "enableAutoCommit": true,
+    "maxPollRecords": 100
+  }
+}
 ```
 
-### Frontend Tests Only
+## 🔧 Development Workflow
+
+### Available Commands
+
 ```bash
-make test-frontend
+# Infrastructure management
+docker-compose up -d          # Start all services
+docker-compose down           # Stop all services
+docker-compose logs -f        # Follow logs
+
+# Development shortcuts
+make dev                      # Start development environment
+make test                     # Run all tests
+make docs                     # Generate API documentation
+make clean                    # Clean up resources
+
+# Database operations
+make db-init                  # Initialize database
+make db-backup                # Backup database
+make db-restore               # Restore database
 ```
 
-### Test Coverage
+### Service Health Checks
 
-- **Unit Tests**: Core logic validation
-- **Integration Tests**: API endpoint testing
-- **Validation Tests**: Input validation and error handling
-
-*Note: Some tests are skipped by default if Kafka is not running. To run full integration tests, ensure Kafka is available.*
-
-## 🔧 Development
-
-### Available Make Commands
-
+Monitor service health:
 ```bash
-make help                 # Show all available commands
-make backend             # Start backend server
-make frontend            # Start frontend server
-make dev                 # Start both backend and frontend
-make build               # Build both components
-make docs                # Generate Swagger docs
-make clean               # Clean build artifacts
+# Backend health
+curl http://localhost:8080/health
+
+# Check all services
+docker-compose ps
 ```
 
-### Project Design Principles
+## 📊 Monitoring & Observability
 
-1. **Clean Architecture**: Separation of concerns with clear layers
-2. **Testability**: Comprehensive test coverage with mocking
-3. **Maintainability**: Clear code structure and documentation
-4. **Extensibility**: Easy to add new features (consumers, topics, etc.)
-5. **Simplicity**: No overengineering, focused on core functionality
+### Built-in Dashboards
+- **Test Execution Dashboard**: Real-time view of running tests
+- **System Health**: Monitor Kafka, MongoDB, and service status
+- **Message Flow Tracking**: End-to-end message traceability
+- **Performance Metrics**: Latency, throughput, and error rates
 
-## 🔄 Future Enhancements
+### External Tools Integration
+- **Kafka UI**: Topic management and message browsing
+- **Mongo Express**: Database inspection and management
+- **Health Endpoints**: Integration with monitoring systems
 
-The architecture supports easy extension for:
+## 🔒 Security Features
 
-- **Kafka Consumer**: Add consumer functionality
-- **Topic Management**: Create/list/delete topics
-- **Message History**: Store and view published messages
-- **Batch Publishing**: Send multiple messages
-- **Authentication**: Add security layers
-- **Monitoring**: Message delivery tracking
-- **Configuration Management**: Environment-based configs
+- **Input Validation**: Comprehensive request validation
+- **Error Handling**: Secure error responses
+- **Resource Limits**: Prevent resource exhaustion
+- **Audit Logging**: Complete action audit trail
 
-## 🐳 Docker Support (Coming Soon)
+## 🚀 Production Deployment
 
-The project is designed to support containerization:
-
+### Environment Variables
 ```bash
-make docker-backend     # Build backend image
-make docker-frontend    # Build frontend image
+# Backend configuration
+KAFKA_BROKER=your-kafka-broker:9093
+MONGO_URI=mongodb://username:password@your-mongo:27017/cupcake
+LOG_LEVEL=info
+GIN_MODE=release
+
+# Frontend configuration  
+API_BASE_URL=https://your-api-domain.com
+```
+
+### Docker Production Setup
+```bash
+# Use production docker-compose
+docker-compose -f docker-compose.prod.yml up -d
+
+# Scale services
+docker-compose up -d --scale cupcake-backend=3
+```
+
+## 🛠️ Troubleshooting
+
+### Common Issues
+
+**Services won't start:**
+```bash
+# Check Docker resources
+docker system df
+docker system prune  # Clean up if needed
+
+# Check logs
+docker-compose logs cupcake-backend
+docker-compose logs cupcake-frontend
+```
+
+**Kafka connection issues:**
+```bash
+# Verify Kafka is running
+docker-compose exec kafka kafka-topics --bootstrap-server localhost:9093 --list
+
+# Check network connectivity
+docker-compose exec cupcake-backend ping kafka
+```
+
+**Database connection problems:**
+```bash
+# Test MongoDB connection
+docker-compose exec mongodb mongosh cupcake
+
+# Check initialization
+docker-compose logs mongodb | grep "initialization"
+```
+
+### Performance Tuning
+
+For high-throughput scenarios:
+```yaml
+# Kafka configuration
+environment:
+  KAFKA_NUM_NETWORK_THREADS: 8
+  KAFKA_NUM_IO_THREADS: 16
+  KAFKA_SOCKET_SEND_BUFFER_BYTES: 102400
+  KAFKA_SOCKET_RECEIVE_BUFFER_BYTES: 102400
 ```
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/new-feature`
-3. Make your changes with tests
-4. Run tests: `make test`
-5. Commit changes: `git commit -am 'Add new feature'`
-6. Push: `git push origin feature/new-feature`
-7. Create a Pull Request
+1. **Fork** the repository
+2. **Create** feature branch: `git checkout -b feature/amazing-feature`
+3. **Follow** the coding standards and add tests
+4. **Test** your changes: `make test`
+5. **Commit** changes: `git commit -am 'Add amazing feature'`
+6. **Push** to branch: `git push origin feature/amazing-feature`
+7. **Create** Pull Request
 
-## 📄 License
+### Development Guidelines
+- Follow Go best practices and Angular style guide
+- Write comprehensive tests for new features
+- Update documentation for API changes
+- Use conventional commit messages
 
-This project is licensed under the MIT License.
+## 📄 Documentation
 
-## 🆘 Troubleshooting
+- **📋 [Complete PRD](./Cupcake_Kafka_Test_Framework_PRD_v2.md)**: Comprehensive product requirements
+- **🔧 [API Documentation](http://localhost:8080/swagger/index.html)**: Interactive API docs
+- **🏗️ [Architecture Guide](./docs/architecture.md)**: System design details
+- **🚀 [Deployment Guide](./docs/deployment.md)**: Production deployment
 
-### Common Issues
+## 🔮 Roadmap
 
-**Backend won't start:**
-- Check if port 8080 is available
-- Ensure Go dependencies are installed: `cd backyard && go mod tidy`
+### Current Version (v2.0)
+- ✅ Visual test flow designer
+- ✅ Intelligent message matching
+- ✅ MongoDB integration
+- ✅ Docker containerization
 
-**Frontend won't start:**
-- Check if port 4200 is available
-- Install Angular dependencies: `cd cupcake_ui && npm install`
-
-**Can't publish to Kafka:**
-- Ensure Kafka is running on the specified broker address
-- Check topic exists or Kafka is configured to auto-create topics
-- Verify network connectivity to Kafka broker
-
-**CORS errors:**
-- Backend includes CORS headers for development
-- For production, configure proper CORS settings
-
-### Health Check
-
-Always check backend health at: `http://localhost:8080/health`
+### Upcoming Features
+- 🔄 **CI/CD Integration**: GitHub Actions, Jenkins plugins
+- 📊 **Advanced Analytics**: ML-based insights and predictions
+- 🔌 **Plugin Architecture**: Custom validators and integrations
+- ☁️ **Cloud Support**: AWS, GCP, Azure deployment templates
 
 ---
 
-Built with ❤️ using Go and Angular
+## 📞 Support
+
+- **Issues**: [GitHub Issues](../../issues)
+- **Discussions**: [GitHub Discussions](../../discussions)
+- **Documentation**: [Wiki](../../wiki)
+
+Built with ❤️ for the Kafka testing community
+
+---
+
+**License**: MIT | **Version**: 2.0.0 | **Maintainer**: Ravikant P

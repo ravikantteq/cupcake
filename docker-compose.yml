@@ -1,57 +1,97 @@
 version: '3.8'
 
 services:
-  # Kafka setup for development
-  zookeeper:
-    image: confluentinc/cp-zookeeper:latest
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+  # Database
+  mongodb:
+    image: mongo:7.0
+    container_name: cupcake-mongodb
     ports:
-      - "2181:2181"
-
-  kafka:
-    image: confluentinc/cp-kafka:latest
-    depends_on:
-      - zookeeper
-    ports:
-      - "9093:9093"
+      - "27017:27017"
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9093
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      MONGO_INITDB_ROOT_USERNAME: cupcake
+      MONGO_INITDB_ROOT_PASSWORD: cupcake123
+      MONGO_INITDB_DATABASE: cupcake
+    volumes:
+      - mongo-data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - cupcake-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.runCommand('ping').ok"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # Backend service
-  backend:
+  # Backend Service
+  cupcake-backend:
     build: 
       context: ./backyard
       dockerfile: Dockerfile
+    container_name: cupcake-backend
     ports:
       - "8080:8080"
     depends_on:
-      - kafka
+      mongodb:
+        condition: service_healthy
     environment:
-      - KAFKA_BROKER=kafka:9093
+      KAFKA_BROKER: host.docker.internal:9093  # Use external Kafka
+      MONGO_URI: mongodb://cupcake:cupcake123@mongodb:27017/cupcake?authSource=admin
+      LOG_LEVEL: info
+      GIN_MODE: release
+      PORT: 8080
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - cupcake-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Allow container to access host
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
     
-  # Frontend service
-  frontend:
+  # Frontend Service
+  cupcake-frontend:
     build:
       context: ./cupcake_ui
       dockerfile: Dockerfile
+    container_name: cupcake-frontend
     ports:
       - "4200:80"
     depends_on:
-      - backend
-
-  # Kafka UI for monitoring (optional)
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    ports:
-      - "8081:8080"
+      cupcake-backend:
+        condition: service_healthy
     environment:
-      KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
+      API_BASE_URL: http://localhost:8080
+    networks:
+      - cupcake-network
+    restart: unless-stopped
+
+  # MongoDB Express for database management (optional)
+  mongo-express:
+    image: mongo-express:latest
+    container_name: cupcake-mongo-express
+    ports:
+      - "8082:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: cupcake
+      ME_CONFIG_MONGODB_ADMINPASSWORD: cupcake123
+      ME_CONFIG_MONGODB_URL: mongodb://cupcake:cupcake123@mongodb:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin123
     depends_on:
-      - kafka
+      mongodb:
+        condition: service_healthy
+    networks:
+      - cupcake-network
+
+volumes:
+  mongo-data:
+    driver: local
+
+networks:
+  cupcake-network:
+    driver: bridge
+    name: cupcake-network

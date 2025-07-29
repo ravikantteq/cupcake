@@ -3,8 +3,9 @@ package netw
 import (
 	"fmt"
 	"log"
+	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 type KafkaProducer struct {
@@ -31,37 +32,60 @@ func (kp *KafkaProducer) Produce(key string, value string) {
 
 // ProduceJSON publishes a message to Kafka and returns error for API handling
 func (kp *KafkaProducer) ProduceJSON(key string, value string) error {
-	p, err := kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": kp.broker})
+	config := kafka.ConfigMap{
+		"bootstrap.servers": kp.broker,
+		"client.id":         "cupcake-producer",
+		"acks":              "all",
+	}
+
+	producer, err := kafka.NewProducer(&config)
 	if err != nil {
 		return fmt.Errorf("failed to create producer: %w", err)
 	}
-	defer p.Close()
+	defer producer.Close()
 
-	// Optional delivery channel
-	deliveryChan := make(chan kafka.Event)
+	// Create the message
+	message := &kafka.Message{
+		TopicPartition: kafka.TopicPartition{
+			Topic:     &kp.topic,
+			Partition: kp.partition,
+		},
+		Key:   []byte(key),
+		Value: []byte(value),
+		Headers: []kafka.Header{
+			{
+				Key:   "backyard-header",
+				Value: []byte("Message produced through backyard service"),
+			},
+		},
+	}
+
+	// Delivery report handler for produced messages
+	deliveryChan := make(chan kafka.Event, 1000)
 	defer close(deliveryChan)
 
-	err = p.Produce(&kafka.Message{
-		TopicPartition: kafka.TopicPartition{Topic: &kp.topic, Partition: kp.partition},
-		Key:            []byte(key),
-		Value:          []byte(value),
-		Headers:        []kafka.Header{{Key: "backyard-header", Value: []byte("Message produced through backyard service")}},
-	}, deliveryChan)
-
+	// Produce the message
+	err = producer.Produce(message, deliveryChan)
 	if err != nil {
 		return fmt.Errorf("failed to produce message: %w", err)
 	}
 
-	// Wait for delivery report
-	e := <-deliveryChan
-	m := e.(*kafka.Message)
-
-	if m.TopicPartition.Error != nil {
-		return fmt.Errorf("delivery failed: %v", m.TopicPartition.Error)
+	// Wait for delivery report with timeout
+	select {
+	case e := <-deliveryChan:
+		switch ev := e.(type) {
+		case *kafka.Message:
+			if ev.TopicPartition.Error != nil {
+				return fmt.Errorf("delivery failed: %v", ev.TopicPartition.Error)
+			}
+			log.Printf("Delivered message to topic %s [%d] at offset %v",
+				*ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
+		case kafka.Error:
+			return fmt.Errorf("delivery error: %v", ev)
+		}
+	case <-time.After(10 * time.Second):
+		return fmt.Errorf("delivery timeout")
 	}
-
-	log.Printf("Delivered message to topic %s [%d] at offset %v",
-		*m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
 
 	return nil
 }

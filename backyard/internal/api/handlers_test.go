@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/systemgenes/cupcake/backyard/internal/models"
+	"github.com/ravikantteq/cupcake/backyard/internal/models"
 )
 
 func setupTestRouter() *gin.Engine {
