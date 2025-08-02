@@ -5,10 +5,10 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	_ "github.com/ravikantteq/cupcake/backyard/docs" // This line is required for swagger
-	"github.com/ravikantteq/cupcake/backyard/internal/api"
-	"github.com/ravikantteq/cupcake/backyard/internal/repository"
-	"github.com/ravikantteq/cupcake/backyard/internal/services"
+	_ "github.com/ravikantteq/cupcake/backyard/docs"
+	"github.com/ravikantteq/cupcake/backyard/internal/handler"
+	"github.com/ravikantteq/cupcake/backyard/internal/manager"
+	"github.com/ravikantteq/cupcake/backyard/internal/store"
 	"github.com/ravikantteq/cupcake/backyard/pkg/storage"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -16,7 +16,7 @@ import (
 
 // @title Cupcake Kafka Test Framework API
 // @version 2.0
-// @description Enterprise-ready Kafka testing platform with advanced flow design and intelligent message matching
+// @description Enterprise-ready Kafka testing platform with clean Go architecture
 // @termsOfService http://swagger.io/terms/
 
 // @contact.name API Support
@@ -29,17 +29,19 @@ import (
 // @host localhost:8080
 // @BasePath /
 func main() {
-	// Get environment variables
-	mongoURI := getEnv("MONGO_URI", "mongodb://cupcake:cupcake123@localhost:27017/cupcake?authSource=admin")
-	kafkaBroker := getEnv("KAFKA_BROKER", "localhost:9093")
-	port := getEnv("PORT", "8080")
-	ginMode := getEnv("GIN_MODE", "debug")
+	// Configuration
+	config := &Config{
+		MongoURI:    getEnv("MONGO_URI", "mongodb://cupcake:cupcake123@localhost:27017/cupcake?authSource=admin"),
+		KafkaBroker: getEnv("KAFKA_BROKER", "localhost:9093"),
+		Port:        getEnv("PORT", "8080"),
+		GinMode:     getEnv("GIN_MODE", "debug"),
+	}
 
 	// Set Gin mode
-	gin.SetMode(ginMode)
+	gin.SetMode(config.GinMode)
 
-	// Initialize MongoDB
-	db, err := storage.NewMongoDB(mongoURI, "cupcake")
+	// Initialize database
+	db, err := storage.NewMongoDB(config.MongoURI, "cupcake")
 	if err != nil {
 		log.Fatal("Failed to connect to MongoDB:", err)
 	}
@@ -49,18 +51,40 @@ func main() {
 		}
 	}()
 
-	// Initialize repositories and services
-	repo := repository.NewRepository(db)
-	flowService := services.NewFlowService(repo, kafkaBroker)
-	consumerService := services.NewConsumerService(repo, kafkaBroker)
+	// Initialize layers
+	dataStore := store.NewMongoDB(db)
+	mgrs := manager.NewManagers(dataStore, config.KafkaBroker)
+	handlers := handler.NewHandlers(mgrs)
 
-	// Initialize handlers
-	handlers := api.NewHandlers(flowService, consumerService, db)
+	// Setup router
+	router := setupRouter(handlers)
 
-	// Set up Gin router
+	// Start server
+	log.Println("🧁 Starting Cupcake Kafka Test Framework API server")
+	log.Printf("📊 MongoDB connected: %s", config.MongoURI)
+	log.Printf("📨 Kafka broker: %s", config.KafkaBroker)
+	log.Printf("🌐 Server listening on port: %s", config.Port)
+	log.Printf("📖 Swagger UI: http://localhost:%s/swagger/index.html", config.Port)
+	log.Printf("🔧 Health Check: http://localhost:%s/health", config.Port)
+
+	if err := router.Run(":" + config.Port); err != nil {
+		log.Fatal("Failed to start server:", err)
+	}
+}
+
+// Config holds application configuration
+type Config struct {
+	MongoURI    string
+	KafkaBroker string
+	Port        string
+	GinMode     string
+}
+
+// setupRouter configures the HTTP router
+func setupRouter(h *handler.Handlers) *gin.Engine {
 	r := gin.Default()
 
-	// Enable CORS for the Angular frontend
+	// CORS middleware
 	r.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
@@ -74,65 +98,55 @@ func main() {
 		c.Next()
 	})
 
-	// Health check endpoint
-	r.GET("/health", handlers.HealthCheck)
+	// Health check
+	r.GET("/health", h.Health.HealthCheck)
 
-	// Legacy API routes (for backward compatibility)
+	// Legacy API routes (backward compatibility)
 	apiGroup := r.Group("/api")
 	{
 		kafkaGroup := apiGroup.Group("/kafka")
 		{
-			kafkaGroup.POST("/publish", handlers.PublishMessage)
+			kafkaGroup.POST("/publish", h.Producer.PublishMessage)
 		}
 	}
 
-	// New API v1 routes
+	// API v1 routes (new clean structure)
 	v1Group := r.Group("/api/v1")
 	{
-		// Flow management
-		flowsGroup := v1Group.Group("/flows")
-		{
-			flowsGroup.POST("", handlers.CreateFlow)
-			flowsGroup.GET("", handlers.GetFlows)
-			flowsGroup.GET("/:id", handlers.GetFlowByID)
-			flowsGroup.PUT("/:id", handlers.UpdateFlow)
-			flowsGroup.POST("/:id/execute", handlers.ExecuteFlow)
-		}
-
 		// Consumer management
 		consumersGroup := v1Group.Group("/consumers")
 		{
-			consumersGroup.POST("", handlers.CreateConsumer)
-			consumersGroup.GET("", handlers.GetConsumers)
-			consumersGroup.GET("/:id", handlers.GetConsumerByID)
-			consumersGroup.POST("/:id/start", handlers.StartConsumer)
-			consumersGroup.POST("/:id/stop", handlers.StopConsumer)
-			consumersGroup.DELETE("/:id", handlers.DeleteConsumer)
+			consumersGroup.POST("", h.Consumer.CreateConsumer)
+			consumersGroup.GET("", h.Consumer.GetConsumers)
+			consumersGroup.GET("/:id", h.Consumer.GetConsumer)
+			consumersGroup.POST("/:id/start", h.Consumer.StartConsumer)
+			consumersGroup.POST("/:id/stop", h.Consumer.StopConsumer)
+			consumersGroup.DELETE("/:id", h.Consumer.DeleteConsumer)
 		}
 
-		// Producer history management
+		// Flow management
+		flowsGroup := v1Group.Group("/flows")
+		{
+			flowsGroup.POST("", h.Flow.CreateFlow)
+			flowsGroup.GET("", h.Flow.GetFlows)
+			flowsGroup.GET("/:id", h.Flow.GetFlow)
+			flowsGroup.PUT("/:id", h.Flow.UpdateFlow)
+			flowsGroup.POST("/:id/execute", h.Flow.ExecuteFlow)
+			flowsGroup.DELETE("/:id", h.Flow.DeleteFlow)
+		}
+
+		// Producer history
 		historyGroup := v1Group.Group("/history")
 		{
-			historyGroup.GET("", handlers.GetProducerHistory)
-			historyGroup.GET("/recent", handlers.GetRecentProducerHistory)
+			historyGroup.GET("", h.Producer.GetProducerHistory)
+			historyGroup.GET("/recent", h.Producer.GetRecentProducerHistory)
 		}
-
-		// TODO: Add more endpoints for suites, executions, etc.
 	}
 
 	// Swagger documentation
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	log.Println("🧁 Starting Cupcake Kafka Test Framework API server")
-	log.Printf("📊 MongoDB connected: %s", mongoURI)
-	log.Printf("📨 Kafka broker: %s", kafkaBroker)
-	log.Printf("🌐 Server listening on port: %s", port)
-	log.Printf("📖 Swagger UI: http://localhost:%s/swagger/index.html", port)
-	log.Printf("🔧 Health Check: http://localhost:%s/health", port)
-
-	if err := r.Run(":" + port); err != nil {
-		log.Fatal("Failed to start server:", err)
-	}
+	return r
 }
 
 // getEnv gets an environment variable with a fallback default value

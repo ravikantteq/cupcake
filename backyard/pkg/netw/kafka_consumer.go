@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
-	"github.com/ravikantteq/cupcake/backyard/internal/models"
+	"github.com/ravikantteq/cupcake/backyard/internal"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -28,7 +28,7 @@ type KafkaConsumer struct {
 }
 
 // NewKafkaConsumer creates a new Kafka consumer
-func NewKafkaConsumer(id primitive.ObjectID, broker, groupID string, topics []string, config models.ConsumerConfig) (*KafkaConsumer, error) {
+func NewKafkaConsumer(id primitive.ObjectID, broker, groupID string, topics []string, config internal.ConsumerConfig) (*KafkaConsumer, error) {
 	// Configure consumer
 	configMap := kafka.ConfigMap{
 		"bootstrap.servers":  broker,
