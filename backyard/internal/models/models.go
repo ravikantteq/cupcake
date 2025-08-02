@@ -51,9 +51,9 @@ const (
 type ConsumerStatus string
 
 const (
-	ConsumerActive   ConsumerStatus = "active"
-	ConsumerInactive ConsumerStatus = "inactive"
-	ConsumerError    ConsumerStatus = "error"
+	ConsumerInactive ConsumerStatus = "inactive" // Consumer is created but not started
+	ConsumerActive   ConsumerStatus = "active"   // Consumer is actively listening
+	ConsumerError    ConsumerStatus = "error"    // Consumer encountered an error
 )
 
 // StepConfig represents the configuration for a test step
@@ -152,16 +152,25 @@ type ConsumerConfig struct {
 // Consumer represents a Kafka consumer instance
 type Consumer struct {
 	ID            primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
+	Name          string             `json:"name" bson:"name" binding:"required"`
+	Description   string             `json:"description,omitempty" bson:"description,omitempty"`
+	Broker        string             `json:"broker" bson:"broker" binding:"required"`
 	GroupID       string             `json:"groupId" bson:"groupId" binding:"required"`
 	Topics        []string           `json:"topics" bson:"topics" binding:"required"`
 	Status        ConsumerStatus     `json:"status" bson:"status"`
 	Config        ConsumerConfig     `json:"config" bson:"config"`
 	LastHeartbeat *time.Time         `json:"lastHeartbeat,omitempty" bson:"lastHeartbeat,omitempty"`
+	StartedAt     *time.Time         `json:"startedAt,omitempty" bson:"startedAt,omitempty"`
+	StoppedAt     *time.Time         `json:"stoppedAt,omitempty" bson:"stoppedAt,omitempty"`
 	CreatedAt     time.Time          `json:"createdAt" bson:"createdAt"`
+	UpdatedAt     time.Time          `json:"updatedAt" bson:"updatedAt"`
 	ErrorMessage  string             `json:"errorMessage,omitempty" bson:"errorMessage,omitempty"`
+	MessageCount  int64              `json:"messageCount" bson:"messageCount"` // Total messages consumed
 }
 
 // Message represents a Kafka message stored in the database
+// The unique constraint should include consumerGroupId to allow multiple consumer groups
+// to consume the same message (topic, partition, offset)
 type Message struct {
 	ID              primitive.ObjectID  `json:"id,omitempty" bson:"_id,omitempty"`
 	Topic           string              `json:"topic" bson:"topic"`
@@ -171,7 +180,8 @@ type Message struct {
 	Value           interface{}         `json:"value" bson:"value"`
 	Headers         map[string]string   `json:"headers,omitempty" bson:"headers,omitempty"`
 	Timestamp       time.Time           `json:"timestamp" bson:"timestamp"`
-	ConsumerGroupID string              `json:"consumerGroupId,omitempty" bson:"consumerGroupId,omitempty"`
+	ConsumerGroupID string              `json:"consumerGroupId" bson:"consumerGroupId"`           // Required for unique constraint
+	ConsumerID      primitive.ObjectID  `json:"consumerId,omitempty" bson:"consumerId,omitempty"` // Track which consumer processed this
 	ExecutionID     *primitive.ObjectID `json:"executionId,omitempty" bson:"executionId,omitempty"`
 }
 
@@ -215,9 +225,22 @@ type ExecuteSuiteRequest struct {
 
 // CreateConsumerRequest represents a request to create a consumer
 type CreateConsumerRequest struct {
-	GroupID string         `json:"groupId" binding:"required"`
-	Topics  []string       `json:"topics" binding:"required"`
-	Config  ConsumerConfig `json:"config"`
+	Name        string         `json:"name" binding:"required"`
+	Description string         `json:"description,omitempty"`
+	Broker      string         `json:"broker" binding:"required"`
+	GroupID     string         `json:"groupId" binding:"required"`
+	Topics      []string       `json:"topics" binding:"required"`
+	Config      ConsumerConfig `json:"config"`
+}
+
+// StartConsumerRequest represents a request to start a consumer
+type StartConsumerRequest struct {
+	ConsumerID primitive.ObjectID `json:"consumerId" binding:"required"`
+}
+
+// StopConsumerRequest represents a request to stop a consumer
+type StopConsumerRequest struct {
+	ConsumerID primitive.ObjectID `json:"consumerId" binding:"required"`
 }
 
 // HealthStatus represents the health status of the system

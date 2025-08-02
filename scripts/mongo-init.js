@@ -173,7 +173,7 @@ db.createCollection('messages', {
   validator: {
     $jsonSchema: {
       bsonType: 'object',
-      required: ['topic', 'partition', 'offset', 'timestamp'],
+      required: ['topic', 'partition', 'offset', 'timestamp', 'consumerGroupId'],
       properties: {
         topic: { bsonType: 'string' },
         partition: { bsonType: 'number' },
@@ -182,7 +182,8 @@ db.createCollection('messages', {
         value: {},
         headers: { bsonType: 'object' },
         timestamp: { bsonType: 'date' },
-        consumerGroupId: { bsonType: 'string' },
+        consumerGroupId: { bsonType: 'string' }, // Required field
+        consumerId: { bsonType: 'objectId' }, // Track which consumer instance processed this
         executionId: { bsonType: 'objectId' }
       }
     }
@@ -213,7 +214,8 @@ db.consumers.createIndex({ status: 1 });
 db.consumers.createIndex({ lastHeartbeat: -1 });
 
 // Messages collection indexes
-db.messages.createIndex({ topic: 1, partition: 1, offset: 1 }, { unique: true });
+// Updated index to include consumerGroupId to allow multiple consumer groups to consume the same message
+db.messages.createIndex({ topic: 1, partition: 1, offset: 1, consumerGroupId: 1 }, { unique: true });
 db.messages.createIndex({ timestamp: -1 });
 db.messages.createIndex({ consumerGroupId: 1 });
 db.messages.createIndex({ executionId: 1 });

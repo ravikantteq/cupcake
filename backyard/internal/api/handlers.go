@@ -16,19 +16,21 @@ import (
 )
 
 type Handlers struct {
-	flowService *services.FlowService
-	db          *storage.MongoDB
-	repository  *repository.Repository
-	historyRepo *repository.ProducerHistoryRepository
+	flowService     *services.FlowService
+	consumerService *services.ConsumerService
+	db              *storage.MongoDB
+	repository      *repository.Repository
+	historyRepo     *repository.ProducerHistoryRepository
 }
 
-func NewHandlers(flowService *services.FlowService, db *storage.MongoDB) *Handlers {
+func NewHandlers(flowService *services.FlowService, consumerService *services.ConsumerService, db *storage.MongoDB) *Handlers {
 	repo := repository.NewRepository(db)
 	return &Handlers{
-		flowService: flowService,
-		db:          db,
-		repository:  repo,
-		historyRepo: repo.NewProducerHistoryRepository(),
+		flowService:     flowService,
+		consumerService: consumerService,
+		db:              db,
+		repository:      repo,
+		historyRepo:     repo.NewProducerHistoryRepository(),
 	}
 }
 
@@ -464,5 +466,242 @@ func (h *Handlers) GetRecentProducerHistory(c *gin.Context) {
 		Success: true,
 		Message: "Recent producer history retrieved successfully",
 		Data:    history,
+	})
+}
+
+// CreateConsumer creates a new consumer configuration
+// @Summary Create a new consumer
+// @Description Create a new consumer configuration that can be started later
+// @Tags consumers
+// @Accept json
+// @Produce json
+// @Param consumer body models.CreateConsumerRequest true "Consumer to create"
+// @Success 201 {object} models.Response{data=models.Consumer}
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /api/v1/consumers [post]
+func (h *Handlers) CreateConsumer(c *gin.Context) {
+	var req models.CreateConsumerRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "Invalid JSON",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	consumer, err := h.consumerService.CreateConsumer(ctx, &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "Failed to create consumer",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, models.Response{
+		Success: true,
+		Message: "Consumer created successfully",
+		Data:    consumer,
+	})
+}
+
+// GetConsumers retrieves all consumers
+// @Summary Get all consumers
+// @Description Get a list of all consumer configurations
+// @Tags consumers
+// @Produce json
+// @Success 200 {object} models.Response{data=[]models.Consumer}
+// @Failure 500 {object} models.ErrorResponse
+// @Router /api/v1/consumers [get]
+func (h *Handlers) GetConsumers(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	consumers, err := h.consumerService.GetAllConsumers(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "Failed to retrieve consumers",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.Response{
+		Success: true,
+		Message: "Consumers retrieved successfully",
+		Data:    consumers,
+	})
+}
+
+// GetConsumerByID retrieves a consumer by ID
+// @Summary Get consumer by ID
+// @Description Get a specific consumer configuration by ID
+// @Tags consumers
+// @Produce json
+// @Param id path string true "Consumer ID"
+// @Success 200 {object} models.Response{data=models.Consumer}
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /api/v1/consumers/{id} [get]
+func (h *Handlers) GetConsumerByID(c *gin.Context) {
+	idStr := c.Param("id")
+
+	id, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "Invalid ID",
+			Message: "Invalid consumer ID format",
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	consumer, err := h.consumerService.GetConsumerStatus(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, models.ErrorResponse{
+			Error:   "Consumer not found",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.Response{
+		Success: true,
+		Message: "Consumer retrieved successfully",
+		Data:    consumer,
+	})
+}
+
+// StartConsumer starts a consumer
+// @Summary Start a consumer
+// @Description Start a consumer to begin listening for messages
+// @Tags consumers
+// @Accept json
+// @Produce json
+// @Param id path string true "Consumer ID"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /api/v1/consumers/{id}/start [post]
+func (h *Handlers) StartConsumer(c *gin.Context) {
+	idStr := c.Param("id")
+
+	id, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "Invalid ID",
+			Message: "Invalid consumer ID format",
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	err = h.consumerService.StartConsumer(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "Failed to start consumer",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.Response{
+		Success: true,
+		Message: "Consumer started successfully",
+	})
+}
+
+// StopConsumer stops a consumer
+// @Summary Stop a consumer
+// @Description Stop a running consumer
+// @Tags consumers
+// @Accept json
+// @Produce json
+// @Param id path string true "Consumer ID"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /api/v1/consumers/{id}/stop [post]
+func (h *Handlers) StopConsumer(c *gin.Context) {
+	idStr := c.Param("id")
+
+	id, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "Invalid ID",
+			Message: "Invalid consumer ID format",
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	err = h.consumerService.StopConsumer(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "Failed to stop consumer",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.Response{
+		Success: true,
+		Message: "Consumer stopped successfully",
+	})
+}
+
+// DeleteConsumer deletes a consumer
+// @Summary Delete a consumer
+// @Description Delete a consumer configuration (only if not running)
+// @Tags consumers
+// @Accept json
+// @Produce json
+// @Param id path string true "Consumer ID"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /api/v1/consumers/{id} [delete]
+func (h *Handlers) DeleteConsumer(c *gin.Context) {
+	idStr := c.Param("id")
+
+	id, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "Invalid ID",
+			Message: "Invalid consumer ID format",
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err = h.consumerService.DeleteConsumer(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "Failed to delete consumer",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.Response{
+		Success: true,
+		Message: "Consumer deleted successfully",
 	})
 }

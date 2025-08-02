@@ -254,7 +254,8 @@ func (r *Repository) NewConsumerRepository() *ConsumerRepository {
 func (cr *ConsumerRepository) CreateConsumer(ctx context.Context, consumer *models.Consumer) (*models.Consumer, error) {
 	consumer.ID = primitive.NewObjectID()
 	consumer.CreatedAt = time.Now()
-	consumer.Status = models.ConsumerInactive
+	consumer.UpdatedAt = time.Now()
+	consumer.Status = models.ConsumerInactive // Use compatible status for MongoDB schema
 
 	_, err := cr.collection.InsertOne(ctx, consumer)
 	if err != nil {
@@ -262,6 +263,20 @@ func (cr *ConsumerRepository) CreateConsumer(ctx context.Context, consumer *mode
 	}
 
 	return consumer, nil
+}
+
+// GetConsumerByID retrieves a consumer by ID
+func (cr *ConsumerRepository) GetConsumerByID(ctx context.Context, id primitive.ObjectID) (*models.Consumer, error) {
+	var consumer models.Consumer
+	err := cr.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&consumer)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("consumer not found")
+		}
+		return nil, fmt.Errorf("failed to get consumer: %w", err)
+	}
+
+	return &consumer, nil
 }
 
 // GetConsumerByGroupID retrieves a consumer by group ID
@@ -295,22 +310,90 @@ func (cr *ConsumerRepository) GetAllConsumers(ctx context.Context) ([]models.Con
 }
 
 // UpdateConsumerStatus updates consumer status
-func (cr *ConsumerRepository) UpdateConsumerStatus(ctx context.Context, groupID string, status models.ConsumerStatus, errorMsg string) error {
+func (cr *ConsumerRepository) UpdateConsumerStatus(ctx context.Context, id primitive.ObjectID, status models.ConsumerStatus, errorMsg string) error {
 	now := time.Now()
 	update := bson.M{
 		"$set": bson.M{
 			"status":        status,
+			"updatedAt":     now,
 			"lastHeartbeat": now,
 		},
 	}
 
 	if errorMsg != "" {
 		update["$set"].(bson.M)["errorMessage"] = errorMsg
+	} else {
+		update["$unset"] = bson.M{"errorMessage": ""}
 	}
 
-	_, err := cr.collection.UpdateOne(ctx, bson.M{"groupId": groupID}, update)
+	_, err := cr.collection.UpdateOne(ctx, bson.M{"_id": id}, update)
 	if err != nil {
 		return fmt.Errorf("failed to update consumer status: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateConsumerWithDetails updates consumer with detailed timing information
+func (cr *ConsumerRepository) UpdateConsumerWithDetails(ctx context.Context, id primitive.ObjectID, status models.ConsumerStatus, errorMsg string, startedAt *time.Time, stoppedAt *time.Time) error {
+	now := time.Now()
+	update := bson.M{
+		"$set": bson.M{
+			"status":        status,
+			"updatedAt":     now,
+			"lastHeartbeat": now,
+		},
+	}
+
+	if errorMsg != "" {
+		update["$set"].(bson.M)["errorMessage"] = errorMsg
+	} else {
+		update["$unset"] = bson.M{"errorMessage": ""}
+	}
+
+	if startedAt != nil {
+		update["$set"].(bson.M)["startedAt"] = *startedAt
+	}
+
+	if stoppedAt != nil {
+		update["$set"].(bson.M)["stoppedAt"] = *stoppedAt
+	}
+
+	_, err := cr.collection.UpdateOne(ctx, bson.M{"_id": id}, update)
+	if err != nil {
+		return fmt.Errorf("failed to update consumer details: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteConsumer deletes a consumer
+func (cr *ConsumerRepository) DeleteConsumer(ctx context.Context, id primitive.ObjectID) error {
+	result, err := cr.collection.DeleteOne(ctx, bson.M{"_id": id})
+	if err != nil {
+		return fmt.Errorf("failed to delete consumer: %w", err)
+	}
+
+	if result.DeletedCount == 0 {
+		return fmt.Errorf("consumer not found")
+	}
+
+	return nil
+}
+
+// IncrementMessageCount increments the message count for a consumer
+func (cr *ConsumerRepository) IncrementMessageCount(ctx context.Context, id primitive.ObjectID) error {
+	update := bson.M{
+		"$inc": bson.M{"messageCount": 1},
+		"$set": bson.M{
+			"lastHeartbeat": time.Now(),
+			"updatedAt":     time.Now(),
+		},
+	}
+
+	_, err := cr.collection.UpdateOne(ctx, bson.M{"_id": id}, update)
+	if err != nil {
+		return fmt.Errorf("failed to increment message count: %w", err)
 	}
 
 	return nil

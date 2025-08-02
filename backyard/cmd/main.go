@@ -52,9 +52,10 @@ func main() {
 	// Initialize repositories and services
 	repo := repository.NewRepository(db)
 	flowService := services.NewFlowService(repo, kafkaBroker)
+	consumerService := services.NewConsumerService(repo, kafkaBroker)
 
 	// Initialize handlers
-	handlers := api.NewHandlers(flowService, db)
+	handlers := api.NewHandlers(flowService, consumerService, db)
 
 	// Set up Gin router
 	r := gin.Default()
@@ -98,6 +99,17 @@ func main() {
 			flowsGroup.POST("/:id/execute", handlers.ExecuteFlow)
 		}
 
+		// Consumer management
+		consumersGroup := v1Group.Group("/consumers")
+		{
+			consumersGroup.POST("", handlers.CreateConsumer)
+			consumersGroup.GET("", handlers.GetConsumers)
+			consumersGroup.GET("/:id", handlers.GetConsumerByID)
+			consumersGroup.POST("/:id/start", handlers.StartConsumer)
+			consumersGroup.POST("/:id/stop", handlers.StopConsumer)
+			consumersGroup.DELETE("/:id", handlers.DeleteConsumer)
+		}
+
 		// Producer history management
 		historyGroup := v1Group.Group("/history")
 		{
@@ -105,7 +117,7 @@ func main() {
 			historyGroup.GET("/recent", handlers.GetRecentProducerHistory)
 		}
 
-		// TODO: Add more endpoints for suites, consumers, executions, etc.
+		// TODO: Add more endpoints for suites, executions, etc.
 	}
 
 	// Swagger documentation
