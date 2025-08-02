@@ -98,6 +98,13 @@ func main() {
 			flowsGroup.POST("/:id/execute", handlers.ExecuteFlow)
 		}
 
+		// Producer history management
+		historyGroup := v1Group.Group("/history")
+		{
+			historyGroup.GET("", handlers.GetProducerHistory)
+			historyGroup.GET("/recent", handlers.GetRecentProducerHistory)
+		}
+
 		// TODO: Add more endpoints for suites, consumers, executions, etc.
 	}
 

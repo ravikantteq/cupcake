@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/ravikantteq/cupcake/backyard/internal/models"
+	"github.com/ravikantteq/cupcake/backyard/internal/repository"
 	"github.com/ravikantteq/cupcake/backyard/internal/services"
 	"github.com/ravikantteq/cupcake/backyard/pkg/netw"
 	"github.com/ravikantteq/cupcake/backyard/pkg/storage"
@@ -16,12 +18,17 @@ import (
 type Handlers struct {
 	flowService *services.FlowService
 	db          *storage.MongoDB
+	repository  *repository.Repository
+	historyRepo *repository.ProducerHistoryRepository
 }
 
 func NewHandlers(flowService *services.FlowService, db *storage.MongoDB) *Handlers {
+	repo := repository.NewRepository(db)
 	return &Handlers{
 		flowService: flowService,
 		db:          db,
+		repository:  repo,
+		historyRepo: repo.NewProducerHistoryRepository(),
 	}
 }
 
@@ -67,9 +74,38 @@ func (h *Handlers) PublishMessage(c *gin.Context) {
 	// Create producer for the specific topic
 	producer := netw.NewKafkaProducer(message.Broker, message.Topic)
 
+	// Create history entry
+	history := &models.ProducerHistory{
+		Broker:    message.Broker,
+		Topic:     message.Topic,
+		Key:       message.Key,
+		Value:     message.Value,
+		Success:   false, // Will be updated after publish attempt
+		Timestamp: time.Now(),
+	}
+
 	// Publish message
 	err := producer.ProduceJSON(message.Key, message.Value)
+
+	// Prepare response data
+	responseData := map[string]interface{}{
+		"topic": message.Topic,
+		"key":   message.Key,
+	}
+
 	if err != nil {
+		// Store failed attempt in history
+		history.Success = false
+		history.Error = err.Error()
+
+		// Save to database (don't fail if history save fails)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, histErr := h.historyRepo.CreateHistoryEntry(ctx, history); histErr != nil {
+			// Log error but don't fail the request
+			// Could use a proper logger here
+		}
+
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "Kafka Error",
 			Message: err.Error(),
@@ -77,13 +113,22 @@ func (h *Handlers) PublishMessage(c *gin.Context) {
 		return
 	}
 
+	// Store successful attempt in history
+	history.Success = true
+	history.Response = responseData
+
+	// Save to database (don't fail if history save fails)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, histErr := h.historyRepo.CreateHistoryEntry(ctx, history); histErr != nil {
+		// Log error but don't fail the request
+		// Could use a proper logger here
+	}
+
 	c.JSON(http.StatusOK, models.Response{
 		Success: true,
 		Message: "Message published successfully",
-		Data: map[string]interface{}{
-			"topic": message.Topic,
-			"key":   message.Key,
-		},
+		Data:    responseData,
 	})
 }
 
@@ -336,5 +381,88 @@ func (h *Handlers) HealthCheck(c *gin.Context) {
 		Success: true,
 		Message: "Service is healthy",
 		Data:    status,
+	})
+}
+
+// GetProducerHistory gets recent producer history
+// @Summary Get producer history
+// @Description Get recent producer message history with pagination
+// @Tags history
+// @Produce json
+// @Param limit query int false "Number of records to return (default 10, max 50)"
+// @Param offset query int false "Number of records to skip (default 0)"
+// @Success 200 {object} models.Response{data=[]models.ProducerHistory}
+// @Failure 500 {object} models.ErrorResponse
+// @Router /api/v1/history [get]
+func (h *Handlers) GetProducerHistory(c *gin.Context) {
+	limitStr := c.DefaultQuery("limit", "10")
+	offsetStr := c.DefaultQuery("offset", "0")
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 || limit > 50 {
+		limit = 10
+	}
+
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	history, err := h.historyRepo.GetHistoryByUser(ctx, "", limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "Database Error",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Get total count for pagination info
+	totalCount, err := h.historyRepo.GetHistoryCount(ctx, "")
+	if err != nil {
+		// If count fails, just return the results without count
+		totalCount = 0
+	}
+
+	c.JSON(http.StatusOK, models.Response{
+		Success: true,
+		Message: "Producer history retrieved successfully",
+		Data: map[string]interface{}{
+			"history":    history,
+			"totalCount": totalCount,
+			"limit":      limit,
+			"offset":     offset,
+		},
+	})
+}
+
+// GetRecentProducerHistory gets the most recent producer history (for UI caching)
+// @Summary Get recent producer history
+// @Description Get the most recent 10 producer messages for UI caching
+// @Tags history
+// @Produce json
+// @Success 200 {object} models.Response{data=[]models.ProducerHistory}
+// @Failure 500 {object} models.ErrorResponse
+// @Router /api/v1/history/recent [get]
+func (h *Handlers) GetRecentProducerHistory(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	history, err := h.historyRepo.GetRecentHistory(ctx, 10)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "Database Error",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.Response{
+		Success: true,
+		Message: "Recent producer history retrieved successfully",
+		Data:    history,
 	})
 }

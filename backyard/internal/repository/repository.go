@@ -373,3 +373,102 @@ func (mr *MessageRepository) GetMessagesByExecutionID(ctx context.Context, execu
 
 	return messages, nil
 }
+
+// ProducerHistoryRepository handles producer history operations
+type ProducerHistoryRepository struct {
+	collection *mongo.Collection
+}
+
+// NewProducerHistoryRepository creates a new producer history repository
+func (r *Repository) NewProducerHistoryRepository() *ProducerHistoryRepository {
+	return &ProducerHistoryRepository{
+		collection: r.db.GetCollection("producer_history"),
+	}
+}
+
+// CreateHistoryEntry creates a new producer history entry
+func (phr *ProducerHistoryRepository) CreateHistoryEntry(ctx context.Context, history *models.ProducerHistory) (*models.ProducerHistory, error) {
+	history.ID = primitive.NewObjectID()
+	if history.Timestamp.IsZero() {
+		history.Timestamp = time.Now()
+	}
+
+	_, err := phr.collection.InsertOne(ctx, history)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create history entry: %w", err)
+	}
+
+	return history, nil
+}
+
+// GetRecentHistory retrieves recent producer history entries
+func (phr *ProducerHistoryRepository) GetRecentHistory(ctx context.Context, limit int) ([]models.ProducerHistory, error) {
+	opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: -1}}).SetLimit(int64(limit))
+
+	cursor, err := phr.collection.Find(ctx, bson.M{}, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find history entries: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var history []models.ProducerHistory
+	if err = cursor.All(ctx, &history); err != nil {
+		return nil, fmt.Errorf("failed to decode history entries: %w", err)
+	}
+
+	return history, nil
+}
+
+// GetHistoryByUser retrieves producer history for a specific user
+func (phr *ProducerHistoryRepository) GetHistoryByUser(ctx context.Context, userID string, limit int, offset int) ([]models.ProducerHistory, error) {
+	opts := options.Find().
+		SetSort(bson.D{{Key: "timestamp", Value: -1}}).
+		SetLimit(int64(limit)).
+		SetSkip(int64(offset))
+
+	filter := bson.M{}
+	if userID != "" {
+		filter["userId"] = userID
+	}
+
+	cursor, err := phr.collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find history entries: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var history []models.ProducerHistory
+	if err = cursor.All(ctx, &history); err != nil {
+		return nil, fmt.Errorf("failed to decode history entries: %w", err)
+	}
+
+	return history, nil
+}
+
+// GetHistoryCount returns the total count of history entries
+func (phr *ProducerHistoryRepository) GetHistoryCount(ctx context.Context, userID string) (int64, error) {
+	filter := bson.M{}
+	if userID != "" {
+		filter["userId"] = userID
+	}
+
+	count, err := phr.collection.CountDocuments(ctx, filter)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count history entries: %w", err)
+	}
+
+	return count, nil
+}
+
+// DeleteOldHistory deletes history entries older than the specified duration
+func (phr *ProducerHistoryRepository) DeleteOldHistory(ctx context.Context, olderThan time.Duration) (int64, error) {
+	cutoffTime := time.Now().Add(-olderThan)
+	filter := bson.M{"timestamp": bson.M{"$lt": cutoffTime}}
+
+	result, err := phr.collection.DeleteMany(ctx, filter)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete old history entries: %w", err)
+	}
+
+	return result.DeletedCount, nil
+}

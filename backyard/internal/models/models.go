@@ -175,6 +175,20 @@ type Message struct {
 	ExecutionID     *primitive.ObjectID `json:"executionId,omitempty" bson:"executionId,omitempty"`
 }
 
+// ProducerHistory represents a record of producer message attempts
+type ProducerHistory struct {
+	ID        primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
+	Broker    string             `json:"broker" bson:"broker"`
+	Topic     string             `json:"topic" bson:"topic"`
+	Key       string             `json:"key,omitempty" bson:"key,omitempty"`
+	Value     string             `json:"value" bson:"value"`
+	Success   bool               `json:"success" bson:"success"`
+	Response  interface{}        `json:"response,omitempty" bson:"response,omitempty"`
+	Error     string             `json:"error,omitempty" bson:"error,omitempty"`
+	Timestamp time.Time          `json:"timestamp" bson:"timestamp"`
+	UserID    string             `json:"userId,omitempty" bson:"userId,omitempty"` // For future user tracking
+}
+
 // CreateFlowRequest represents a request to create a new test flow
 type CreateFlowRequest struct {
 	Name        string     `json:"name" binding:"required"`

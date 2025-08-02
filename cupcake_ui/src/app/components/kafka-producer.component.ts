@@ -1,7 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { KafkaService, KafkaMessage } from '../services/kafka.service';
+import { KafkaService, KafkaMessage, ProducerHistory } from '../services/kafka.service';
 
 interface MessageHistory {
   id: string;
@@ -12,6 +12,7 @@ interface MessageHistory {
   value: string;
   success: boolean;
   response?: any;
+  error?: string;
   expanded?: boolean;
 }
 
@@ -109,7 +110,11 @@ interface MessageHistory {
       <div class="message-history" *ngIf="messageHistory.length > 0">
         <div class="history-header">
           <h3>📋 Message History</h3>
-          <button class="btn btn-secondary btn-sm" (click)="clearHistory()">Clear History</button>
+          <div class="history-actions">
+            <button class="btn btn-secondary btn-sm" (click)="loadMoreHistory()" 
+                    title="Load more history from backend">View More</button>
+            <button class="btn btn-secondary btn-sm" (click)="clearHistory()">Clear Cache</button>
+          </div>
         </div>
         
         <div class="history-list">
@@ -287,6 +292,11 @@ interface MessageHistory {
       margin: 0;
       color: #333;
     }
+
+    .history-actions {
+      display: flex;
+      gap: 10px;
+    }
     
     .history-list {
       display: flex;
@@ -442,7 +452,7 @@ interface MessageHistory {
     }
   `]
 })
-export class KafkaProducerComponent {
+export class KafkaProducerComponent implements OnInit {
   message: KafkaMessage = {
     broker: '192.168.65.254:9093',
     topic: '',
@@ -455,10 +465,16 @@ export class KafkaProducerComponent {
   isLoading = false;
   isHealthChecking = false;
   messageHistory: MessageHistory[] = [];
+  
+  // Local buffer management
+  private readonly MAX_LOCAL_BUFFER = 5;
+  private localBuffer: MessageHistory[] = [];
+  private isInitialized = false;
 
-  constructor(private kafkaService: KafkaService) {
-    // Load history from localStorage
-    this.loadHistory();
+  constructor(private kafkaService: KafkaService) {}
+
+  ngOnInit() {
+    this.loadHistoryFromBackend();
   }
 
   onSubmit() {
@@ -474,8 +490,9 @@ export class KafkaProducerComponent {
         this.result = response;
         this.isLoading = false;
         
-        // Add to history
-        this.addToHistory(this.message, response, true);
+        // Add to history (this will now be handled by backend automatically)
+        // Just refresh the recent history to get the latest data
+        this.refreshRecentHistory();
       },
       error: (error) => {
         this.result = {
@@ -484,8 +501,8 @@ export class KafkaProducerComponent {
         };
         this.isLoading = false;
         
-        // Add to history
-        this.addToHistory(this.message, this.result, false);
+        // Refresh recent history to get the failed attempt
+        this.refreshRecentHistory();
       }
     });
   }
@@ -509,27 +526,107 @@ export class KafkaProducerComponent {
     });
   }
 
-  addToHistory(message: KafkaMessage, response: any, success: boolean) {
-    const historyItem: MessageHistory = {
-      id: Date.now().toString(),
-      timestamp: new Date(),
-      broker: message.broker,
-      topic: message.topic,
-      key: message.key,
-      value: message.value,
-      success: success,
-      response: response,
-      expanded: false
-    };
+  // Load history from backend on component initialization
+  loadHistoryFromBackend() {
+    this.kafkaService.getRecentProducerHistory().subscribe({
+      next: (response) => {
+        if (response.success && response.data) {
+          this.messageHistory = this.convertBackendHistoryToLocal(response.data);
+          this.localBuffer = [...this.messageHistory]; // Initialize local buffer
+          this.isInitialized = true;
+        }
+      },
+      error: (error) => {
+        console.warn('Failed to load history from backend:', error);
+        // Fallback to localStorage if backend fails
+        this.loadHistoryFromLocalStorage();
+        this.isInitialized = true;
+      }
+    });
+  }
 
-    this.messageHistory.unshift(historyItem);
-    
-    // Keep only last 50 messages
-    if (this.messageHistory.length > 50) {
-      this.messageHistory = this.messageHistory.slice(0, 50);
+  // Refresh recent history after a new message
+  refreshRecentHistory() {
+    if (!this.isInitialized) return;
+
+    this.kafkaService.getRecentProducerHistory().subscribe({
+      next: (response) => {
+        if (response.success && response.data) {
+          const backendHistory = this.convertBackendHistoryToLocal(response.data);
+          
+          // Update local buffer with recent items from backend
+          this.updateLocalBuffer(backendHistory);
+          
+          // Display the local buffer (max 5 items)
+          this.messageHistory = [...this.localBuffer];
+        }
+      },
+      error: (error) => {
+        console.warn('Failed to refresh history:', error);
+      }
+    });
+  }
+
+  // Convert backend ProducerHistory to local MessageHistory format
+  convertBackendHistoryToLocal(backendHistory: ProducerHistory[]): MessageHistory[] {
+    return backendHistory.map(item => ({
+      id: item.id,
+      timestamp: new Date(item.timestamp),
+      broker: item.broker,
+      topic: item.topic,
+      key: item.key,
+      value: item.value,
+      success: item.success,
+      response: item.response,
+      error: item.error,
+      expanded: false
+    }));
+  }
+
+  // Update local buffer with new items (maintain queue of max 5 items)
+  updateLocalBuffer(newItems: MessageHistory[]) {
+    // Add new items to the beginning of the buffer
+    for (const newItem of newItems.reverse()) {
+      // Check if item already exists in buffer
+      const existingIndex = this.localBuffer.findIndex(item => item.id === newItem.id);
+      
+      if (existingIndex === -1) {
+        // Add new item to the beginning
+        this.localBuffer.unshift(newItem);
+      }
     }
     
-    this.saveHistory();
+    // Maintain maximum buffer size
+    if (this.localBuffer.length > this.MAX_LOCAL_BUFFER) {
+      this.localBuffer = this.localBuffer.slice(0, this.MAX_LOCAL_BUFFER);
+    }
+  }
+
+  // Fallback to localStorage for offline scenarios
+  loadHistoryFromLocalStorage() {
+    try {
+      const stored = localStorage.getItem('kafka-producer-history');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        this.messageHistory = parsed.map((item: any) => ({
+          ...item,
+          timestamp: new Date(item.timestamp)
+        })).slice(0, this.MAX_LOCAL_BUFFER); // Limit to buffer size
+        
+        this.localBuffer = [...this.messageHistory];
+      }
+    } catch (error) {
+      console.warn('Failed to load message history from localStorage:', error);
+      this.messageHistory = [];
+      this.localBuffer = [];
+    }
+  }
+
+  // Legacy method - now just triggers a full history reload
+  addToHistory(message: KafkaMessage, response: any, success: boolean) {
+    // This method is now handled by the backend
+    // We just refresh the recent history to show the latest data
+    setTimeout(() => this.refreshRecentHistory(), 500); // Small delay to ensure backend has processed
   }
 
   toggleHistoryItem(item: MessageHistory) {
@@ -537,9 +634,10 @@ export class KafkaProducerComponent {
   }
 
   clearHistory() {
-    if (confirm('Are you sure you want to clear the message history?')) {
+    if (confirm('Are you sure you want to clear the local message history cache? This will not delete the backend history.')) {
       this.messageHistory = [];
-      this.saveHistory();
+      this.localBuffer = [];
+      this.saveHistoryToLocalStorage();
     }
   }
 
@@ -567,27 +665,28 @@ export class KafkaProducerComponent {
     });
   }
 
-  private loadHistory() {
+  // Save current buffer to localStorage as backup
+  saveHistoryToLocalStorage() {
     try {
-      const stored = localStorage.getItem('kafka-producer-history');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        this.messageHistory = parsed.map((item: any) => ({
-          ...item,
-          timestamp: new Date(item.timestamp)
-        }));
-      }
+      localStorage.setItem('kafka-producer-history', JSON.stringify(this.localBuffer));
     } catch (error) {
-      console.warn('Failed to load message history:', error);
-      this.messageHistory = [];
+      console.warn('Failed to save message history to localStorage:', error);
     }
   }
 
-  private saveHistory() {
-    try {
-      localStorage.setItem('kafka-producer-history', JSON.stringify(this.messageHistory));
-    } catch (error) {
-      console.warn('Failed to save message history:', error);
-    }
+  // Load more history from backend (for future "View More" functionality)
+  loadMoreHistory() {
+    const currentCount = this.messageHistory.length;
+    this.kafkaService.getProducerHistory(20, currentCount).subscribe({
+      next: (response) => {
+        if (response.success && response.data?.history) {
+          const moreHistory = this.convertBackendHistoryToLocal(response.data.history);
+          this.messageHistory = [...this.messageHistory, ...moreHistory];
+        }
+      },
+      error: (error) => {
+        console.warn('Failed to load more history:', error);
+      }
+    });
   }
 }
