@@ -2,23 +2,27 @@ package manager
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/ravikantteq/cupcake/backyard/internal"
 	"github.com/ravikantteq/cupcake/backyard/internal/store"
+	"github.com/ravikantteq/cupcake/backyard/pkg/netw"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // FlowManager manages test flows and their execution
 type FlowManager struct {
-	store store.Store
+	store       store.Store
+	kafkaBroker string
 }
 
 // NewFlowManager creates a new flow manager
-func NewFlowManager(store store.Store) *FlowManager {
+func NewFlowManager(store store.Store, kafkaBroker string) *FlowManager {
 	return &FlowManager{
-		store: store,
+		store:       store,
+		kafkaBroker: kafkaBroker,
 	}
 }
 
@@ -157,7 +161,7 @@ func (fm *FlowManager) executeFlowStepsAsync(ctx context.Context, execution *int
 			execution.Metrics.ErrorsCount++
 			fmt.Printf("Step %s failed: %v\n", step.StepID, stepErr)
 		} else {
-			executionStep.Status = internal.StatusSuccess
+			executionStep.Status = internal.StatusCompleted
 			execution.Metrics.StepsCompleted++
 		}
 
@@ -179,7 +183,7 @@ func (fm *FlowManager) executeFlowStepsAsync(ctx context.Context, execution *int
 
 	// Update final execution status
 	if execution.Status == internal.StatusRunning {
-		execution.Status = internal.StatusSuccess
+		execution.Status = internal.StatusCompleted
 	}
 
 	endTime := time.Now()
@@ -196,16 +200,69 @@ func (fm *FlowManager) executeFlowStepsAsync(ctx context.Context, execution *int
 
 // executeProduceStep executes a produce step
 func (fm *FlowManager) executeProduceStep(ctx context.Context, step *internal.FlowStep, execStep *internal.ExecutionStep, stepResults map[string]interface{}) error {
-	// TODO: Implement message production
-	// This would integrate with your Kafka producer
 	fmt.Printf("Executing produce step %s to topic %s\n", step.StepID, step.Config.Topic)
+
+	// Handle message formatting - check if message already has 'key' and 'value' structure
+	var valueStr string
+	var key string
+
+	if step.Config.Message != nil {
+		// Check if the message follows the key/value pattern like working flows
+		if keyVal, hasKey := step.Config.Message["key"]; hasKey {
+			if valVal, hasValue := step.Config.Message["value"]; hasValue {
+				// This message already has key/value structure like working flows
+				key = fmt.Sprintf("%v", keyVal)
+				// Value might be a string (JSON) or an object - handle both
+				switch v := valVal.(type) {
+				case string:
+					valueStr = v
+				default:
+					jsonBytes, err := json.Marshal(v)
+					if err != nil {
+						return fmt.Errorf("failed to marshal value field: %w", err)
+					}
+					valueStr = string(jsonBytes)
+				}
+			} else {
+				// Has key but no value - treat whole message as value
+				jsonBytes, err := json.Marshal(step.Config.Message)
+				if err != nil {
+					return fmt.Errorf("failed to marshal message: %w", err)
+				}
+				valueStr = string(jsonBytes)
+				key = fmt.Sprintf("%v", keyVal)
+			}
+		} else {
+			// No key/value structure - treat whole message as value and generate key
+			jsonBytes, err := json.Marshal(step.Config.Message)
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON value: %w", err)
+			}
+			valueStr = string(jsonBytes)
+			key = fmt.Sprintf("flow-step-%s", step.StepID)
+		}
+	} else {
+		valueStr = "{}"
+		key = fmt.Sprintf("flow-step-%s", step.StepID)
+	}
+
+	// Create producer and publish message using the same method as standalone producer
+	producer := netw.NewKafkaProducer(fm.kafkaBroker, step.Config.Topic)
+
+	err := producer.ProduceJSON(key, valueStr)
+	if err != nil {
+		return fmt.Errorf("failed to produce message to topic %s: %w", step.Config.Topic, err)
+	}
 
 	execStep.Input = step.Config.Message
 	execStep.Output = map[string]interface{}{
 		"topic":   step.Config.Topic,
-		"message": "produced",
+		"key":     key,
+		"message": valueStr,
+		"status":  "published",
 	}
 
+	fmt.Printf("Successfully published message to topic %s with key %s\n", step.Config.Topic, key)
 	return nil
 }
 

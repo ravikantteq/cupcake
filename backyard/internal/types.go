@@ -10,13 +10,14 @@ import (
 type Status string
 
 const (
-	StatusInactive Status = "inactive"
-	StatusActive   Status = "active"
-	StatusError    Status = "error"
-	StatusRunning  Status = "running"
-	StatusPending  Status = "pending"
-	StatusSuccess  Status = "success"
-	StatusFailed   Status = "failed"
+	StatusInactive  Status = "inactive"
+	StatusActive    Status = "active"
+	StatusError     Status = "error"
+	StatusRunning   Status = "running"
+	StatusPending   Status = "pending"
+	StatusCompleted Status = "completed" // Changed from "success" to match MongoDB schema
+	StatusFailed    Status = "failed"
+	StatusCancelled Status = "cancelled"
 )
 
 // StepType defines different types of test steps

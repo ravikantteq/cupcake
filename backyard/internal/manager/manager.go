@@ -15,7 +15,7 @@ type Managers struct {
 func NewManagers(store store.Store, kafkaBroker string) *Managers {
 	return &Managers{
 		Consumer: NewConsumerManager(store, kafkaBroker),
-		Flow:     NewFlowManager(store),
+		Flow:     NewFlowManager(store, kafkaBroker),
 		Producer: NewProducerManager(store),
 	}
 }
