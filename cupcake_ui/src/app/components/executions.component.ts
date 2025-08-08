@@ -420,18 +420,16 @@ export class ExecutionsComponent implements OnInit, OnDestroy {
     if (!silent) this.isLoading = true;
     this.errorMessage = '';
 
+    // Get all executions without specific flowId to see all executions
     this.kafkaService.getExecutions().subscribe({
       next: (response: ApiResponse) => {
         this.isLoading = false;
-        if (response.success) {
-          this.executions = response.data || [];
-          // If no real executions, show mock data for demo
-          if (this.executions.length === 0) {
-            this.executions = this.generateMockExecutions();
-          }
+        if (response.success && response.data && response.data.length > 0) {
+          this.executions = response.data;
+          console.log('Loaded real executions:', this.executions);
         } else {
-          this.errorMessage = response.message || 'Failed to load executions';
-          // Fallback to mock data on error
+          console.log('No real executions found, using mock data');
+          // If no real executions, show mock data for demo
           this.executions = this.generateMockExecutions();
         }
       },
@@ -578,6 +576,32 @@ export class ExecutionsComponent implements OnInit, OnDestroy {
 
   viewExecutionDetails(execution: Execution) {
     this.selectedExecution = execution;
+    this.refreshExecutionDetails();
+  }
+
+  refreshExecutionDetails() {
+    if (!this.selectedExecution?.id) return;
+
+    this.kafkaService.getExecution(this.selectedExecution.id).subscribe({
+      next: (response: ApiResponse) => {
+        if (response.success && response.data) {
+          this.selectedExecution = response.data;
+          console.log('Refreshed execution details:', this.selectedExecution);
+          
+          // Auto-refresh if execution is still running
+          if (this.selectedExecution?.status === 'running') {
+            setTimeout(() => {
+              if (this.selectedExecution?.status === 'running') {
+                this.refreshExecutionDetails();
+              }
+            }, 2000); // Refresh every 2 seconds for running executions
+          }
+        }
+      },
+      error: (error) => {
+        console.error('Error refreshing execution details:', error);
+      }
+    });
   }
 
   closeExecutionDetails(event?: MouseEvent) {

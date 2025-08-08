@@ -210,8 +210,12 @@ export class KafkaService {
   }
 
   // Execution Management
-  getExecutions(): Observable<ApiResponse> {
-    return this.http.get<ApiResponse>(`${this.baseUrl}/api/v1/executions`);
+  // Execution Management
+  getExecutions(flowId?: string): Observable<ApiResponse> {
+    const url = flowId 
+      ? `${this.baseUrl}/api/v1/executions?flowId=${flowId}`
+      : `${this.baseUrl}/api/v1/executions`;
+    return this.http.get<ApiResponse>(url);
   }
 
   getExecution(id: string): Observable<ApiResponse> {

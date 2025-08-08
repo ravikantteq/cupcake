@@ -47,6 +47,7 @@ type ExecutionStore interface {
 	CreateExecution(ctx context.Context, execution *internal.Execution) (*internal.Execution, error)
 	GetExecution(ctx context.Context, id primitive.ObjectID) (*internal.Execution, error)
 	GetExecutions(ctx context.Context, flowID primitive.ObjectID) ([]*internal.Execution, error)
+	GetAllExecutions(ctx context.Context) ([]*internal.Execution, error)
 	UpdateExecution(ctx context.Context, execution *internal.Execution) error
 }
 

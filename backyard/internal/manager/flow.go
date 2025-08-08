@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/ravikantteq/cupcake/backyard/internal"
 	"github.com/ravikantteq/cupcake/backyard/internal/store"
 	"github.com/ravikantteq/cupcake/backyard/pkg/netw"
@@ -123,6 +124,11 @@ func (fm *FlowManager) GetExecutions(ctx context.Context, flowID primitive.Objec
 	return fm.store.GetExecutions(ctx, flowID)
 }
 
+// GetAllExecutions retrieves all executions
+func (fm *FlowManager) GetAllExecutions(ctx context.Context) ([]*internal.Execution, error) {
+	return fm.store.GetAllExecutions(ctx)
+}
+
 // executeFlowStepsAsync executes flow steps in a goroutine
 func (fm *FlowManager) executeFlowStepsAsync(ctx context.Context, execution *internal.Execution, flow *internal.Flow) {
 	fmt.Printf("Starting execution of flow %s (ID: %s)\n", flow.Name, execution.ID.Hex())
@@ -166,6 +172,11 @@ func (fm *FlowManager) executeFlowStepsAsync(ctx context.Context, execution *int
 		}
 
 		execution.Steps = append(execution.Steps, executionStep)
+
+		// Update execution in database after each step for real-time progress
+		if err := fm.store.UpdateExecution(ctx, execution); err != nil {
+			fmt.Printf("Failed to update execution after step %s: %v\n", step.StepID, err)
+		}
 
 		// Store step output for reference by subsequent steps
 		if executionStep.Output != nil {
@@ -268,8 +279,6 @@ func (fm *FlowManager) executeProduceStep(ctx context.Context, step *internal.Fl
 
 // executeConsumeStep executes a consume step
 func (fm *FlowManager) executeConsumeStep(ctx context.Context, step *internal.FlowStep, execStep *internal.ExecutionStep, stepResults map[string]interface{}) error {
-	// TODO: Implement message consumption
-	// This would integrate with your Kafka consumer
 	fmt.Printf("Executing consume step %s from topic %s\n", step.StepID, step.Config.Topic)
 
 	timeout := time.Duration(step.Config.Timeout) * time.Millisecond
@@ -277,16 +286,92 @@ func (fm *FlowManager) executeConsumeStep(ctx context.Context, step *internal.Fl
 		timeout = 10 * time.Second
 	}
 
-	// Simulate message consumption
-	select {
-	case <-time.After(1 * time.Second):
-		execStep.Output = map[string]interface{}{
-			"topic":   step.Config.Topic,
-			"message": "consumed",
+	// Create a temporary consumer for this step
+	consumerID := primitive.NewObjectID()
+	groupID := fmt.Sprintf("flow-consumer-%s-%s", step.StepID, consumerID.Hex())
+	topics := []string{step.Config.Topic}
+
+	// Default consumer config for flow steps
+	config := internal.ConsumerConfig{
+		AutoOffsetReset:     "latest", // Only consume new messages
+		EnableAutoCommit:    true,
+		SessionTimeoutMs:    6000,
+		HeartbeatIntervalMs: 3000,
+	}
+
+	consumer, err := netw.NewKafkaConsumer(consumerID, fm.kafkaBroker, groupID, topics, config)
+	if err != nil {
+		return fmt.Errorf("failed to create consumer: %w", err)
+	}
+	defer consumer.Stop()
+
+	// Channel to receive messages
+	messageChan := make(chan *kafka.Message, 1)
+	errorChan := make(chan error, 1)
+
+	// Set message handler
+	consumer.SetMessageHandler(func(msg *kafka.Message) {
+		select {
+		case messageChan <- msg:
+		default:
+			// Channel is full, ignore additional messages
 		}
+	})
+
+	// Set error handler
+	consumer.SetErrorHandler(func(err error) {
+		select {
+		case errorChan <- err:
+		default:
+			// Channel is full, ignore additional errors
+		}
+	})
+
+	// Start consumer
+	if err := consumer.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start consumer: %w", err)
+	}
+
+	// Wait for message or timeout
+	execStep.Input = map[string]interface{}{
+		"topic":   step.Config.Topic,
+		"timeout": timeout.Milliseconds(),
+	}
+
+	select {
+	case msg := <-messageChan:
+		// Successfully consumed a message
+		messageData := map[string]interface{}{
+			"topic":     *msg.TopicPartition.Topic,
+			"partition": msg.TopicPartition.Partition,
+			"offset":    msg.TopicPartition.Offset,
+			"key":       string(msg.Key),
+			"value":     string(msg.Value),
+			"timestamp": msg.Timestamp,
+		}
+
+		execStep.Output = map[string]interface{}{
+			"status":  "consumed",
+			"message": messageData,
+			"count":   1,
+		}
+
+		fmt.Printf("Successfully consumed message from topic %s: %s\n", step.Config.Topic, string(msg.Value))
 		return nil
+
+	case err := <-errorChan:
+		execStep.Output = map[string]interface{}{
+			"status": "error",
+			"error":  err.Error(),
+		}
+		return fmt.Errorf("consumer error: %w", err)
+
 	case <-time.After(timeout):
-		return fmt.Errorf("timeout waiting for message from topic %s", step.Config.Topic)
+		execStep.Output = map[string]interface{}{
+			"status":  "timeout",
+			"message": fmt.Sprintf("No message received within %v", timeout),
+		}
+		return fmt.Errorf("timeout waiting for message from topic %s after %v", step.Config.Topic, timeout)
 	}
 }
 

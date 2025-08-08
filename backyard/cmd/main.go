@@ -132,7 +132,15 @@ func setupRouter(h *handler.Handlers) *gin.Engine {
 			flowsGroup.GET("/:id", h.Flow.GetFlow)
 			flowsGroup.PUT("/:id", h.Flow.UpdateFlow)
 			flowsGroup.POST("/:id/execute", h.Flow.ExecuteFlow)
+			flowsGroup.GET("/:id/executions", h.Flow.GetExecutions)
 			flowsGroup.DELETE("/:id", h.Flow.DeleteFlow)
+		}
+
+		// Execution management
+		executionsGroup := v1Group.Group("/executions")
+		{
+			executionsGroup.GET("/:id", h.Flow.GetExecution)
+			executionsGroup.GET("", h.Flow.GetExecutions)
 		}
 
 		// Producer history

@@ -260,6 +260,27 @@ func (m *MongoDB) GetExecutions(ctx context.Context, flowID primitive.ObjectID) 
 	return executions, cursor.Err()
 }
 
+func (m *MongoDB) GetAllExecutions(ctx context.Context) ([]*internal.Execution, error) {
+	// Get all executions sorted by start time (most recent first)
+	cursor, err := m.db.Database.Collection("executions").Find(ctx, bson.M{},
+		options.Find().SetSort(bson.D{{Key: "startTime", Value: -1}}).SetLimit(100))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var executions []*internal.Execution
+	for cursor.Next(ctx) {
+		var execution internal.Execution
+		if err := cursor.Decode(&execution); err != nil {
+			return nil, err
+		}
+		executions = append(executions, &execution)
+	}
+
+	return executions, cursor.Err()
+}
+
 func (m *MongoDB) UpdateExecution(ctx context.Context, execution *internal.Execution) error {
 	filter := bson.M{"_id": execution.ID}
 	update := bson.M{"$set": execution}

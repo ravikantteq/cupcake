@@ -179,3 +179,72 @@ func (h *FlowHandler) DeleteFlow(c *gin.Context) {
 		Message: "Flow deleted successfully",
 	})
 }
+
+// GetExecution handles GET /executions/:id
+func (h *FlowHandler) GetExecution(c *gin.Context) {
+	id, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, internal.APIError{
+			Error:   "Invalid execution ID",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	execution, err := h.mgr.GetExecution(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, internal.APIError{
+			Error:   "Execution not found",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, internal.APIResponse{
+		Success: true,
+		Message: "Execution retrieved successfully",
+		Data:    execution,
+	})
+}
+
+// GetExecutions handles GET /executions?flowId=xxx or GET /flows/:id/executions
+func (h *FlowHandler) GetExecutions(c *gin.Context) {
+	flowIDStr := c.Query("flowId")
+	if flowIDStr == "" {
+		// If no flowId provided, try to get from URL parameter (flows/:id/executions)
+		flowIDStr = c.Param("id")
+	}
+
+	var executions []*internal.Execution
+	var err error
+
+	if flowIDStr == "" {
+		// No flowId provided, get all executions
+		executions, err = h.mgr.GetAllExecutions(c.Request.Context())
+	} else {
+		// Get executions for specific flow
+		flowID, parseErr := primitive.ObjectIDFromHex(flowIDStr)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, internal.APIError{
+				Error:   "Invalid flow ID",
+				Message: parseErr.Error(),
+			})
+			return
+		}
+		executions, err = h.mgr.GetExecutions(c.Request.Context(), flowID)
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, internal.APIError{
+			Error:   "Failed to get executions",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, internal.APIResponse{
+		Success: true,
+		Message: "Executions retrieved successfully",
+		Data:    executions,
+	})
+}

@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -15,6 +15,9 @@ interface TestFlow {
   expanded?: boolean;
   isNew?: boolean;
   hasChanges?: boolean;
+  currentExecution?: ExecutionData;
+  isExecuting?: boolean;
+  executionCompleted?: boolean;
 }
 
 interface FlowStep {
@@ -23,6 +26,31 @@ interface FlowStep {
   config: any;
   isNew?: boolean;
   isEditing?: boolean;
+}
+
+interface ExecutionData {
+  id: string;
+  flowId: string;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  startTime: string;
+  endTime?: string;
+  steps: ExecutionStep[];
+  metrics: {
+    totalDuration: number;
+    messagesProduced: number;
+    messagesConsumed: number;
+    errorsCount: number;
+    stepsCompleted: number;
+  };
+}
+
+interface ExecutionStep {
+  stepId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  input?: any;
+  output?: any;
+  errors?: string[];
+  duration: number;
 }
 
 interface NewStep {
@@ -69,9 +97,15 @@ interface NewStep {
                 </span>
               </div>
               <div class="flow-actions" (click)="$event.stopPropagation()">
-                <button class="btn btn-sm btn-success" (click)="executeFlow(flow.id)" *ngIf="!flow.isNew">
+                <button class="btn btn-sm btn-success" (click)="executeFlow(flow.id)" *ngIf="!flow.isNew && !flow.isExecuting && !flow.executionCompleted">
                   ▶️ Execute
                 </button>
+                <button class="btn btn-sm btn-warning" (click)="clearExecution(flow)" *ngIf="!flow.isNew && flow.executionCompleted">
+                  🔄 Clear Results
+                </button>
+                <span class="execution-status" *ngIf="flow.isExecuting">
+                  ⏳ Executing...
+                </span>
                 <button class="btn btn-sm btn-primary" (click)="saveFlow(flow)" *ngIf="flow.hasChanges || flow.isNew">
                   💾 Save
                 </button>
@@ -127,21 +161,43 @@ interface NewStep {
                   <div class="step-item" *ngFor="let step of flow.steps; let i = index" 
                        [class.editing]="step.isEditing" [class.is-new]="step.isNew">
                     
-                    <!-- Step Display -->
-                    <div class="step-display" *ngIf="!step.isEditing">
-                      <div class="step-number">{{ i + 1 }}</div>
-                      <div class="step-content">
-                        <div class="step-header">
-                          <span class="step-type">{{ getStepTypeDisplay(step.type) }}</span>
-                          <span class="step-id">{{ step.stepId }}</span>
+                    <div class="step-row">
+                      <!-- Step Display -->
+                      <div class="step-display" *ngIf="!step.isEditing">
+                        <div class="step-number">{{ i + 1 }}</div>
+                        <div class="step-content">
+                          <div class="step-header">
+                            <span class="step-type">{{ getStepTypeDisplay(step.type) }}</span>
+                            <span class="step-id">{{ step.stepId }}</span>
+                          </div>
+                          <div class="step-config">{{ getStepConfigSummary(step) }}</div>
                         </div>
-                        <div class="step-config">{{ getStepConfigSummary(step) }}</div>
+                        <div class="step-actions">
+                          <button class="btn btn-xs btn-secondary" (click)="moveStepUp(flow, i)" [disabled]="i === 0">⬆️</button>
+                          <button class="btn btn-xs btn-secondary" (click)="moveStepDown(flow, i)" [disabled]="i === flow.steps.length - 1">⬇️</button>
+                          <button class="btn btn-xs btn-secondary" (click)="editStep(step)">✏️</button>
+                          <button class="btn btn-xs btn-danger" (click)="removeStep(flow, i)">🗑️</button>
+                        </div>
                       </div>
-                      <div class="step-actions">
-                        <button class="btn btn-xs btn-secondary" (click)="moveStepUp(flow, i)" [disabled]="i === 0">⬆️</button>
-                        <button class="btn btn-xs btn-secondary" (click)="moveStepDown(flow, i)" [disabled]="i === flow.steps.length - 1">⬇️</button>
-                        <button class="btn btn-xs btn-secondary" (click)="editStep(step)">✏️</button>
-                        <button class="btn btn-xs btn-danger" (click)="removeStep(flow, i)">🗑️</button>
+
+                      <!-- Execution Timeline Column -->
+                      <div class="execution-timeline-column" *ngIf="flow.isExecuting || flow.executionCompleted">
+                        <div class="timeline-connector" *ngIf="i > 0"></div>
+                        <div class="timeline-status" [ngClass]="getStepStatusClass(flow, step.stepId)">
+                          <span>{{ getStepStatusIcon(flow, step.stepId) }}</span>
+                        </div>
+                        <div class="timeline-connector" *ngIf="i < flow.steps.length - 1"></div>
+                      </div>
+                    </div>
+
+                    <!-- Step Execution Response -->
+                    <div class="step-response" *ngIf="(flow.isExecuting || flow.executionCompleted) && hasStepData(flow.currentExecution, step.stepId)">
+                      <div class="response-header">
+                        <span class="response-title">📊 Step Response</span>
+                        <span class="response-duration">{{ getStepDuration(flow.currentExecution, step.stepId) }}ms</span>
+                      </div>
+                      <div class="response-content">
+                        <pre>{{ getStepResponse(flow.currentExecution, step.stepId) }}</pre>
                       </div>
                     </div>
 
@@ -429,6 +485,7 @@ interface NewStep {
       border: 1px solid #e2e8f0;
       border-radius: 6px;
       background: white;
+      margin-bottom: 10px;
     }
 
     .step-item.editing {
@@ -441,10 +498,145 @@ interface NewStep {
       background: #f0fff4;
     }
 
+    .step-row {
+      display: flex;
+      align-items: stretch;
+    }
+
     .step-display {
       display: flex;
       align-items: center;
       padding: 15px;
+      flex: 1;
+    }
+
+    /* Execution Timeline Column */
+    .execution-timeline-column {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 60px;
+      background: #f8f9fa;
+      border-left: 1px solid #e2e8f0;
+      position: relative;
+    }
+
+    .timeline-connector {
+      width: 2px;
+      height: 20px;
+      background: #4299e1;
+      flex: 1;
+    }
+
+    .timeline-status {
+      background: white;
+      border: 2px solid #e2e8f0;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      z-index: 1;
+      margin: 8px 0;
+      transition: all 0.3s ease;
+    }
+
+    .timeline-status.status-running {
+      border-color: #f6ad55;
+      background: #fef5e7;
+      animation: pulse 1.5s infinite;
+    }
+
+    .timeline-status.status-completed {
+      border-color: #48bb78;
+      background: #f0fff4;
+    }
+
+    .timeline-status.status-failed {
+      border-color: #f56565;
+      background: #fed7d7;
+    }
+
+    .timeline-status.status-pending {
+      border-color: #e2e8f0;
+      background: white;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+
+    /* Step Response Styles */
+    .step-response {
+      margin: 0 15px 15px 15px;
+      padding: 15px;
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 6px;
+      border-left: 4px solid #4299e1;
+    }
+
+    .response-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #e9ecef;
+    }
+
+    .response-title {
+      font-weight: 600;
+      color: #2d3748;
+      font-size: 0.9rem;
+    }
+
+    .response-duration {
+      font-size: 0.8rem;
+      color: #718096;
+      background: #e2e8f0;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+
+    .response-content {
+      font-size: 0.85rem;
+    }
+
+    .response-content pre {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 10px;
+      margin: 0;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 0.8rem;
+      line-height: 1.4;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .execution-status {
+      color: #f6ad55;
+      font-weight: 600;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .btn-warning {
+      background: #f6ad55;
+      color: white;
+    }
+
+    .btn-warning:hover {
+      background: #ed8936;
     }
 
     .step-number {
@@ -710,15 +902,22 @@ interface NewStep {
     }
   `]
 })
-export class FlowsComponent implements OnInit {
+export class FlowsComponent implements OnInit, OnDestroy {
   flows: TestFlow[] = [];
   loading = true;
   newStepType: string = '';
+  executionPollingInterval: any;
 
   constructor(private http: HttpClient) {}
 
   ngOnInit() {
     this.loadFlows();
+  }
+
+  ngOnDestroy() {
+    if (this.executionPollingInterval) {
+      clearInterval(this.executionPollingInterval);
+    }
   }
 
   loadFlows() {
@@ -907,15 +1106,117 @@ export class FlowsComponent implements OnInit {
   executeFlow(flowId: string) {
     if (!flowId) return;
     
+    // Find the flow and set it as executing
+    const flow = this.flows.find(f => f.id === flowId);
+    if (!flow) return;
+    
+    flow.isExecuting = true;
+    flow.executionCompleted = false;
+    flow.expanded = true; // Auto-expand to show execution progress
+    
     this.http.post<any>(`${environment.apiBaseUrl}/api/v1/flows/${flowId}/execute`, {}).subscribe({
       next: (response: any) => {
-        alert(`Flow execution started! Execution ID: ${response.data?.id || 'unknown'}`);
+        const executionId = response.data?.id || response.id;
+        if (executionId) {
+          this.startExecutionPolling(flow, executionId);
+        }
       },
       error: (error: any) => {
         console.error('Failed to execute flow:', error);
         alert('Failed to execute flow. Please check the console for details.');
+        flow.isExecuting = false;
       }
     });
+  }
+
+  clearExecution(flow: TestFlow) {
+    flow.isExecuting = false;
+    flow.executionCompleted = false;
+    flow.currentExecution = undefined;
+    
+    // Stop polling if still running
+    if (this.executionPollingInterval) {
+      clearInterval(this.executionPollingInterval);
+      this.executionPollingInterval = null;
+    }
+  }
+
+  startExecutionPolling(flow: TestFlow, executionId: string) {
+    // Poll for execution updates every 1 second
+    this.executionPollingInterval = setInterval(() => {
+      this.http.get<any>(`${environment.apiBaseUrl}/api/v1/executions/${executionId}`).subscribe({
+        next: (response: any) => {
+          const execution = response.data || response;
+          flow.currentExecution = execution;
+          
+          // Stop polling if execution is completed
+          if (execution.status === 'completed' || execution.status === 'failed' || execution.status === 'cancelled') {
+            flow.isExecuting = false;
+            flow.executionCompleted = true;
+            if (this.executionPollingInterval) {
+              clearInterval(this.executionPollingInterval);
+              this.executionPollingInterval = null;
+            }
+          }
+        },
+        error: (error: any) => {
+          console.error('Failed to fetch execution status:', error);
+        }
+      });
+    }, 1000);
+  }
+
+  getStepExecutionStatus(execution: ExecutionData, stepId: string): string {
+    const executionStep = execution.steps.find(s => s.stepId === stepId);
+    return executionStep?.status || 'pending';
+  }
+
+  getExecutionStepData(execution: ExecutionData, stepId: string): ExecutionStep | null {
+    return execution.steps.find(s => s.stepId === stepId) || null;
+  }
+
+  hasStepData(execution: ExecutionData | undefined, stepId: string): boolean {
+    if (!execution) return false;
+    return execution.steps.some(s => s.stepId === stepId);
+  }
+
+  getStepDuration(execution: ExecutionData | undefined, stepId: string): number {
+    if (!execution) return 0;
+    const step = execution.steps.find(s => s.stepId === stepId);
+    return step?.duration || 0;
+  }
+
+  getStepResponse(execution: ExecutionData | undefined, stepId: string): string {
+    if (!execution) return '';
+    const step = execution.steps.find(s => s.stepId === stepId);
+    if (!step) return '';
+    
+    if (step.errors && step.errors.length > 0) {
+      return `❌ ERRORS:\n${step.errors.join('\n')}`;
+    }
+    
+    if (step.output) {
+      return JSON.stringify(step.output, null, 2);
+    }
+    
+    return 'No response data';
+  }
+
+  getStepStatusClass(flow: TestFlow, stepId: string): string {
+    if (!flow.currentExecution) return 'status-pending';
+    const step = flow.currentExecution.steps.find(s => s.stepId === stepId);
+    return `status-${step?.status || 'pending'}`;
+  }
+
+  getStepStatusIcon(flow: TestFlow, stepId: string): string {
+    if (!flow.currentExecution) return '⚪';
+    const step = flow.currentExecution.steps.find(s => s.stepId === stepId);
+    switch (step?.status) {
+      case 'running': return '⏳';
+      case 'completed': return '✅';
+      case 'failed': return '❌';
+      default: return '⚪';
+    }
   }
 
   getStepTypeDisplay(type: string): string {
