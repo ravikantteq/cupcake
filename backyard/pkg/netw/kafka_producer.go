@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/ravikantteq/cupcake/backyard/internal/config"
 )
 
 type KafkaProducer struct {
@@ -36,6 +37,7 @@ func (kp *KafkaProducer) ProduceJSON(key string, value string) error {
 		"bootstrap.servers": kp.broker,
 		"client.id":         "cupcake-producer",
 		"acks":              "all",
+		"message.max.bytes": config.Config.Kafka.MessageMaxBytes,
 	}
 
 	producer, err := kafka.NewProducer(&config)

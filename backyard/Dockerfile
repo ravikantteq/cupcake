@@ -11,10 +11,15 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY go.mod go.sum ./
-RUN go mod download
+# Copy only go.mod first to cache dependencies
+COPY go.mod ./
+COPY go.sum ./
+
+# Download and verify dependencies
+RUN go mod download && go mod verify
 
 COPY . .
+RUN go mod tidy
 
 RUN go build -o bin/backyard cmd/main.go
 

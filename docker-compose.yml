@@ -40,6 +40,7 @@ services:
       GIN_MODE: release
       PORT: 8080
     volumes:
+      - .:/app
       - ./logs:/app/logs
     networks:
       - cupcake-network
