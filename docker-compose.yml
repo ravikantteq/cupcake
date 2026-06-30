@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  # Database
+  mongodb:
+    image: mongo:7.0
+    container_name: cupcake-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: cupcake
+      MONGO_INITDB_ROOT_PASSWORD: cupcake123
+      MONGO_INITDB_DATABASE: cupcake
+    volumes:
+      - mongo-data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - cupcake-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.runCommand('ping').ok"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend Service
+  cupcake-backend:
+    build: 
+      context: ./backyard
+      dockerfile: Dockerfile
+    container_name: cupcake-backend
+    ports:
+      - "8080:8080"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER: host.docker.internal:9093  # Use external Kafka
+      MONGO_URI: mongodb://cupcake:cupcake123@mongodb:27017/cupcake?authSource=admin
+      LOG_LEVEL: info
+      GIN_MODE: release
+      PORT: 8080
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    networks:
+      - cupcake-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Allow container to access host
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    
+  # Frontend Service
+  cupcake-frontend:
+    build:
+      context: ./cupcake_ui
+      dockerfile: Dockerfile
+    container_name: cupcake-frontend
+    ports:
+      - "4200:80"
+    depends_on:
+      cupcake-backend:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://localhost:8080
+    networks:
+      - cupcake-network
+    restart: unless-stopped
+
+  # MongoDB Express for database management (optional)
+  mongo-express:
+    image: mongo-express:latest
+    container_name: cupcake-mongo-express
+    ports:
+      - "8082:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: cupcake
+      ME_CONFIG_MONGODB_ADMINPASSWORD: cupcake123
+      ME_CONFIG_MONGODB_URL: mongodb://cupcake:cupcake123@mongodb:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin123
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - cupcake-network
+
+volumes:
+  mongo-data:
+    driver: local
+
+networks:
+  cupcake-network:
+    driver: bridge
+    name: cupcake-network

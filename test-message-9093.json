@@ -1,0 +1,6 @@
+{
+  "broker": "localhost:9093",
+  "topic": "orders",
+  "key": "order-456",
+  "value": "{\"orderId\": 456, \"customerId\": 789, \"amount\": 99.99, \"status\": \"pending\", \"timestamp\": \"2025-07-26T09:13:00Z\"}"
+}
